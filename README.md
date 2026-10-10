@@ -66,6 +66,9 @@ Put a PS2 disc in, open **5S2CD**: the drive is the first tile on the shelf, wit
   drive's tile updates within a couple of seconds either way.
 - **Home-screen tile for the disc** (open the game straight from the home screen) needs `discwatch.elf` running,
   which is why it belongs in autoload. A disc that was already in when it starts gets its tile too.
+  ShadowMountPlus adds the tile only while **no game or app is running**: if 5S2CD is still open in the background
+  (the PS button doesn't close it), the tile appears once you close it (*Options -> Close Game* on its tile) - or
+  just switch back to 5S2CD, where the disc is already on the shelf.
 - After a restart, **jailbreak first**: 5S2CD (like PS5SX2) can only read the drive once your HEN is running.
 
 ## Build from source
