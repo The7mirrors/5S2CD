@@ -2,33 +2,38 @@
 
 <h1 align="center">5S2CD</h1>
 
-<p align="center"><b>Play your own PlayStation 2 game discs on a jailbroken PS5.</b><br>
-Put the disc in the PS5's drive or a USB DVD drive, pick it on the shelf, play.</p>
+<p align="center"><b>Play your own PS2 game discs on a jailbroken PS5.</b><br>
+Put the disc in, pick it, play. No ripping, no copying files.</p>
 
 ---
 
-5S2CD is a fork of **[PS5SX2](https://github.com/Swordpdf/PS5SX2)** by **swordpdf**, the PCSX2 port for the PS5.
-All the emulation, the shelf and the settings are PS5SX2's work; 5S2CD adds reading **real discs** and a few shelf
-extras, and installs as its own app next to PS5SX2 (title ID `PPSA99213`), sharing PS5SX2's BIOS, memory cards and
-settings.
+5S2CD is the PS2 emulator **[PS5SX2](https://github.com/Swordpdf/PS5SX2)** by **swordpdf**, with one big addition:
+it reads **real PS2 discs**. It installs as its own app next to PS5SX2 and shares its BIOS, memory cards and
+settings, so your saves work in both.
 
-> Based on PS5SX2 **vk-285-139**. The original PS5SX2 readme is kept as [README-PS5SX2.md](README-PS5SX2.md).
+## What's new
 
-## What it adds
+| | Feature | What it does |
+| :---: | --- | --- |
+| 💿 | **PS5 disc drive reads PS2 games** | Put a PS2 disc (DVD or CD) in your PS5's own drive. 5S2CD shows it first on the shelf with its name and cover. Press **X** to play. |
+| 🔌 | **External USB DVD drive** | No disc drive on your PS5 (Digital Edition)? Plug in a USB DVD drive and use it the same way. Both drives work at the same time. |
+| ⚡ | **Insert the disc any time** | Before you open 5S2CD or while it's open: the shelf notices the disc within a couple of seconds. |
+| 🏠 | **The game's own tile on the PS5 home screen** | Insert a disc and a tile with the game's name and cover appears on the PS5 home screen. Open it and the game starts straight from the disc. Take the disc out and the tile goes away. *(Needs the included `discwatch.elf`.)* |
+| ⭐ | **Favorites** | Press **L3** on any game to make it a favorite. Favorites come first on the shelf, with a badge. |
+| 🗂️ | **Shelves** | Press **Circle** to switch the shelf: **All**, **Disc drives**, **Favorites** or **Disc images**. |
+| 🖼️ | **Covers for discs** | Each disc gets its box art automatically, like your disc images do. |
+| 🎨 | **Its own look** | A darker shelf, its own icon and home-screen background, and no music on the home screen. |
 
-- **Real discs** - PS2 DVDs and CDs in the PS5's own drive (`/dev/cd0`) or a USB DVD drive (`/dev/cd1`). Each drive
-  sits first on the shelf with the game's name and cover as soon as a disc is in.
-- **Disc tiles on the home screen** *(optional, `discwatch.elf`)* - insert a disc and a tile with the game's name and
-  cover appears on the PS5 home screen; open it and the game boots straight from the disc. Take the disc out and the
-  tile goes away. One tile per drive; nothing starts by itself.
-- **Favourites** - press **L3** on the shelf to mark a game; favourites come first, with a badge.
-- **Shelf tabs** - **Circle** switches between *All*, *Disc drives*, *Favorites* and *Disc images*.
-- **Covers for discs** - downloaded by the disc's serial, like PS5SX2 does for images.
-- A darker shelf background. Your disc images (ISO, CHD, CSO...) still work as in PS5SX2.
+Everything else is PS5SX2 as you know it: your disc images (ISO, CHD, CSO...), settings, memory cards, save states
+and the in-game menu.
 
-**Limits:** CD audio tracks play as silence (the PS5's disc driver can't read audio sectors), the PS5's own drive
-loads a little slower than a USB drive, and *back to the menu* restarts the app (with `relaunch.elf`) instead of
-returning instantly.
+> **Good to know:** the PS5 always says **"Unsupported Disc"** when you insert a PS2 disc. That's the console's own
+> message and it's harmless: choose *Go to Home* and open 5S2CD (or the game's tile).
+>
+> **Limits:** CD audio tracks are silent (the PS5 can't read audio from discs), the PS5's own drive loads a little
+> slower than a USB drive, and going *back to the menu* restarts the app.
+
+<sub>Based on PS5SX2 vk-285-139. The original PS5SX2 readme is kept as [README-PS5SX2.md](README-PS5SX2.md).</sub>
 
 ## Requirements
 
