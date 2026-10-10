@@ -23,7 +23,7 @@ settings work in it too.
 | ⭐ | **Favorites** | Press **L3** on any game to make it a favorite. Favorites come first on the shelf, with a badge. |
 | 🗂️ | **Shelves** | Press **Circle** to switch the shelf: **All**, **Disc drives**, **Favorites** or **Disc images**. |
 | 🖼️ | **Covers for discs** | Each disc gets its box art automatically, like your disc images do. |
-| 🎨 | **Its own look** | A darker shelf, its own icon and home-screen background, and no music on the home screen. |
+| 🎨 | **Its own look** | A darker shelf, and its own icon and home-screen background. |
 
 Everything else is PS5SX2 as you know it: your disc images (ISO, CHD, CSO...), settings, memory cards, save states
 and the in-game menu.
@@ -96,7 +96,7 @@ What changed against PS5SX2:
 | Disc reader (FreeBSD `cd(4)`: DVD layout, CD TOC, 2048-byte reads, read-ahead) | `ps5/coreorbis/orbis-shims/ProsperoDisc.cpp`, `ProsperoCDVD.cpp` |
 | Drives on the shelf, favourites, tabs, covers, darker background | `ps5/frontend/fe_app.*`, `fe_games.*`, `fe_options.cpp`, `fe_covers.cpp`, `fe_ps5.cpp` |
 | Disc boot, disc tiles, back to the menu via `relaunch.elf`, title ID `PPSA99213` | `ps5/coreorbis/main-boot.cpp`, `ProsperoHenJailbreak.cpp` |
-| App identity (name, icon, background; no music) | `ps5/5s2cd/sce_sys/` |
+| App identity (name, icon, background) | `ps5/5s2cd/sce_sys/` |
 | Home-screen disc tiles | `ps5/5s2cd/discwatch/` |
 | Relaunch helper | `ps5/5s2cd/relaunch/` |
 
