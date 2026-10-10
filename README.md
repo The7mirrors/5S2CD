@@ -49,7 +49,8 @@ returning instantly.
 5. Allow `PPSA99213` out of the sandbox wherever you allowed PS5SX2 (`PPSA99203`), for example your HEN's app list or
    `/data/whitelist.txt`.
 6. Let ShadowMountPlus pick up the app (rescan, or restart the PS5). **5S2CD** appears on the home screen.
-7. *Optional:* send `discwatch.elf` with your payload loader (or add it to autoload) for the home-screen disc tiles.
+7. *Optional:* for the home-screen disc tiles, add `discwatch.elf` to your payload loader's **autoload** list, so it
+   starts again after every jailbreak (payloads don't survive a restart). You can also send it by hand once.
    *Nicer tile art (optional):* get a free API key from [SteamGridDB](https://www.steamgriddb.com/profile/preferences/api)
    and save it in a text file on the PS5 at `/data/PCSX2/disc-tiles/steamgriddb-key.txt`. The tiles then also use
    SteamGridDB's backgrounds and logos. Your key stays on your console; without it the tiles use the disc's cover.
@@ -58,6 +59,14 @@ returning instantly.
 
 Put a PS2 disc in, open **5S2CD**: the drive is the first tile on the shelf, with the game's name and cover. Press
 **X** to play. Everything else - settings, memory cards, save states, the in-game menu - works as in PS5SX2.
+
+- **"Unsupported Disc" is normal.** The PS5 says this for every PS2 disc - it's the console's own message and nothing
+  can change it. Choose *Go to Home* and open 5S2CD (or the disc's own tile, see below): the game is there.
+- **Order doesn't matter.** Disc in first and then open 5S2CD, or open 5S2CD first and then put the disc in - the
+  drive's tile updates within a couple of seconds either way.
+- **Home-screen tile for the disc** (open the game straight from the home screen) needs `discwatch.elf` running,
+  which is why it belongs in autoload. A disc that was already in when it starts gets its tile too.
+- After a restart, **jailbreak first**: 5S2CD (like PS5SX2) can only read the drive once your HEN is running.
 
 ## Build from source
 
