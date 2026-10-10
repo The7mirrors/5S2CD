@@ -1840,6 +1840,11 @@ public:
 		return true;
 	}
 	void Stop() { m_stop = true; }
+	bool Running()
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return m_running;
+	}
 	int Poll(std::string& line)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -2380,6 +2385,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	unsigned frames = 0, slot = 0;
 	double worst = 0;
 	bool first_shown = false;
+	bool close_for_disc = false; // 5S2CD: a PS2 disc went into the PS5's own drive on the shelf
 	while (ok && !app.Done())
 	{
 		const double now = Now();
@@ -2410,8 +2416,19 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		}
 		for (DriveUpdate du; drives->Poll(du);)
 		{
+			// 5S2CD: a PS2 disc newly in the PS5's own drive closes the shelf (and the app) for the disc's tile.
+			const bool new_disc = du.game.drive == "/dev/cd0" && !du.game.serial.empty() &&
+				games[static_cast<size_t>(du.index)].serial != du.game.serial;
 			games[static_cast<size_t>(du.index)] = du.game;
 			app.UpdateDrive(du.index, du.game, du.images);
+			if (new_disc && !copier->Running())
+				close_for_disc = true;
+		}
+		if (close_for_disc)
+		{
+			std::printf("[frontend] a PS2 disc went into the PS5 drive: closing so its home-screen tile can appear\n");
+			std::fflush(stdout);
+			break;
 		}
 		app.Update(dt, in);
 		app.Build(frame, Clock());
@@ -2551,6 +2568,11 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		delete mixer;
 	}
 
+	if (close_for_disc) // 5S2CD: main-boot.cpp closes the app (kOrbisCloseForDiscPath)
+	{
+		*ran = true;
+		return kOrbisCloseForDiscPath;
+	}
 	if (!picked)
 	{
 		std::printf("[frontend] stopped without a pick; the plain list takes over\n");

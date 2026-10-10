@@ -2991,6 +2991,14 @@ int main()
   OrbisAchievementsWaitForLogin();
   OrbisAchievementsStopBrowser(); // pr9n: the shelf's achievement list isn't needed now (was: wait out its requests)
 #endif
+  // 5S2CD (2026-10-10): a PS2 disc went into the PS5's own drive on the shelf: the PS5 shows its home screen for it
+  // anyway, so the app closes and the disc's tile can be added at once (ShadowMountPlus adds tiles only while no app runs).
+  if (s_game_path == kOrbisCloseForDiscPath)
+  {
+    printf("[boot] a PS2 disc went into the PS5 drive on the shelf: closing for its home-screen tile\n");
+    orbis_eventf("a PS2 disc in the PS5 drive on the shelf: the app closed for its tile");
+    orbis_exit_quietly(0);
+  }
   if (!s_tile_drive.empty())
     s_game_path = s_tile_drive; // a disc tile: straight into its drive's disc
   else if (!frontend_ran)

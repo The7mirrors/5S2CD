@@ -56,6 +56,9 @@ struct OrbisFrontendPaths
 // 2026-10-08 (AI-assisted): what orbis_frontend_run returns for the sheet's "PS2 system menu": main-boot.cpp then boots the
 // BIOS with no disc (the PS2's own menu: memory card browser, clock, language).
 inline constexpr const char kOrbisSystemMenuPath[] = "@ps2-system-menu";
+// 2026-10-10 (5S2CD): what it returns when a PS2 disc went into the PS5's own drive on the shelf: main-boot.cpp closes
+// the app, so the disc's home-screen tile can be added at once (ShadowMountPlus adds tiles only while no app runs).
+inline constexpr const char kOrbisCloseForDiscPath[] = "@close-for-disc";
 
 // Test build 1 (vk-285-55): the folders on USB drives PS5SX2 lists games from: each drive's root
 // (/mnt/usb0 to /mnt/usb7) and, when present, its DVD/ and CD/ (Open PS2 Loader's layout) and
