@@ -7,9 +7,10 @@ Put the disc in, pick it, play. No ripping, no copying files.</p>
 
 ---
 
-5S2CD is the PS2 emulator **[PS5SX2](https://github.com/Swordpdf/PS5SX2)** by **swordpdf**, with one big addition:
-it reads **real PS2 discs**. It installs as its own app next to PS5SX2 and shares its BIOS, memory cards and
-settings, so your saves work in both.
+5S2CD is the PS2 emulator **[PS5SX2](https://github.com/Swordpdf/PS5SX2)** by **swordpdf**, with more additions:
+it reads **real PS2 discs** from the PS5's own drive or a **USB DVD drive**, gives each inserted disc **its own tile on
+the PS5 home screen**, and adds **favorites** and **shelves** to sort your games. It installs as its own app next to
+PS5SX2 and shares its BIOS, memory cards and settings, so your saves work in both.
 
 ## What's new
 
