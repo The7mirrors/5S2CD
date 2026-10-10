@@ -93,6 +93,11 @@ public:
 	bool PickerOpen() const { return m_picker.open; } // vk-285-135
 	int ShelfCount() const { return static_cast<int>(m_games.size()); } // vk-285-137: the games on the shelf
 
+	// 2026-10-10 (5S2CD): a disc went in or out of a drive while the shelf is open (fe_ps5.cpp's drive watcher). `g` is
+	// the drive's entry as it is now (name, serial, settings name, badges), `index` its index in Init's list; `images`
+	// are its new spine and placeholder and, once found, its cover. An empty drive loses its cover.
+	void UpdateDrive(int index, const GameInfo& g, const std::vector<CoverImage>& images);
+
 private:
 	struct Slot
 	{

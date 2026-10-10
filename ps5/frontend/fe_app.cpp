@@ -351,6 +351,60 @@ void App::PollCovers()
 		}
 }
 
+void App::UpdateDrive(int index, const GameInfo& g, const std::vector<CoverImage>& images)
+{
+	Slot* slot = nullptr;
+	GameInfo* game = nullptr;
+	if (const int pos = PositionOf(index); pos >= 0)
+	{
+		slot = &m_slots[static_cast<size_t>(pos)];
+		game = &m_games[static_cast<size_t>(pos)];
+	}
+	else
+		for (Shelved& h : m_shelved)
+			if (h.index == index)
+			{
+				slot = &h.slot;
+				game = &h.game;
+				break;
+			}
+	if (!slot)
+		return;
+	*game = g;
+	Slot& s = *slot;
+	bool got_cover = false;
+	for (const CoverImage& img : images)
+	{
+		Texture* t = m_renderer->CreateTexture(static_cast<uint32_t>(img.width), static_cast<uint32_t>(img.height),
+			VK_FORMAT_R8G8B8A8_UNORM, img.rgba.data());
+		if (!t)
+			continue;
+		Texture** dst = img.kind == CoverImage::Spine ? &s.spine : img.kind == CoverImage::Placeholder ? &s.placeholder : &s.cover;
+		m_renderer->DestroyTexture(*dst);
+		*dst = t;
+		if (img.kind == CoverImage::Cover)
+		{
+			got_cover = true;
+			s.has_cover = true;
+			s.cover_mix = 0;
+			s.has_glow = img.has_glow;
+			if (img.has_glow)
+				for (int i = 0; i < 3; i++)
+					s.glow[i] = img.glow[i];
+		}
+	}
+	if (!got_cover && g.serial.empty() && s.cover)
+	{
+		// the disc came out: back to the drive's placeholder
+		m_renderer->DestroyTexture(s.cover);
+		s.cover = nullptr;
+		s.has_cover = false;
+		s.has_glow = false;
+		s.cover_mix = 0;
+	}
+	s.dirty = true; // PollCovers rebuilds the slot's texture set
+}
+
 void App::Update(double dt, const Input& in)
 {
 	m_time += dt;

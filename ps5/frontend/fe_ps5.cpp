@@ -43,6 +43,8 @@
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <sys/mount.h> // statfs: the texture packs' free space
+#include <sys/disk.h>  // 5S2CD: DIOCGMEDIASIZE, the drive watcher
+#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <thread>
 #include <time.h>
@@ -1608,6 +1610,192 @@ int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budge
 	return saved;
 }
 
+namespace
+{
+// 2026-10-10 (5S2CD, AI-assisted; user: "can you make it read after launch also"): the disc drives are looked at every
+// 2 s while the shelf is open. A disc going in or out changes its drive's entry at once (name, serial, settings name,
+// spine and placeholder), and the cover follows as soon as one is on disk (the covers folder, where discwatch also puts
+// the ones it downloads). Only the media size is asked each time; the disc itself is read only when that changes.
+struct DriveUpdate
+{
+	int index = -1;
+	GameInfo game;
+	std::vector<CoverImage> images;
+};
+
+long long DriveMediaSize(const std::string& dev)
+{
+	const int fd = open(dev.c_str(), O_RDONLY);
+	if (fd < 0)
+		return 0;
+	off_t size = 0;
+	if (ioctl(fd, DIOCGMEDIASIZE, &size) != 0)
+		size = 0;
+	close(fd);
+	return static_cast<long long>(size);
+}
+
+bool ReadWholeFile(const std::string& path, std::vector<uint8_t>& out)
+{
+	out.clear();
+	FILE* f = std::fopen(path.c_str(), "rb");
+	if (!f)
+		return false;
+	uint8_t buf[65536];
+	size_t n;
+	while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0 && out.size() < (32u << 20))
+		out.insert(out.end(), buf, buf + n);
+	std::fclose(f);
+	return !out.empty();
+}
+
+class DriveWatcher
+{
+public:
+	void Start(const std::vector<GameInfo>& games, const OrbisFrontendPaths& paths, const Fonts* fonts)
+	{
+		m_paths = paths;
+		m_fonts = fonts;
+		for (size_t i = 0; i < games.size(); i++)
+			if (!games[i].drive.empty())
+			{
+				Drive d;
+				d.index = static_cast<int>(i);
+				d.base = games[i];
+				d.base.serial.clear();
+				d.base.title = d.base.file;
+				d.base.stem = "disc-" + d.base.drive.substr(d.base.drive.rfind('/') + 1);
+				d.base.damaged.clear();
+				d.game = games[i];
+				m_drives.push_back(d);
+			}
+		if (m_drives.empty())
+		{
+			m_done = true;
+			return;
+		}
+		std::thread([this] { Run(); m_done = true; }).detach();
+	}
+
+	// Asks the thread to stop and waits up to `timeout_ms`; false when it is still inside a disc read (it then ends on
+	// its own and the object, and what it uses, must stay alive).
+	bool Stop(int timeout_ms)
+	{
+		m_stop = true;
+		for (int waited = 0; !m_done && waited < timeout_ms; waited += 10)
+			usleep(10 * 1000);
+		return m_done;
+	}
+
+	bool Poll(DriveUpdate& out)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_updates.empty())
+			return false;
+		out = std::move(m_updates.front());
+		m_updates.erase(m_updates.begin());
+		return true;
+	}
+
+private:
+	struct Drive
+	{
+		int index = -1;
+		GameInfo base; // the entry with no disc
+		GameInfo game; // as the shelf has it now
+		long long size = -1;
+		bool have_cover = true; // the cover service handles the disc that was in when the shelf opened
+	};
+
+	void Run()
+	{
+		while (!m_stop)
+		{
+			for (Drive& d : m_drives)
+			{
+				if (m_stop)
+					break;
+				const long long size = DriveMediaSize(d.base.drive);
+				bool changed = false;
+				if (d.size < 0)
+					changed = (size > 0) != !d.game.serial.empty(); // a disc went in or out before the first look
+				else
+					changed = size != d.size;
+				d.size = size;
+				DriveUpdate u;
+				u.index = d.index;
+				if (changed)
+				{
+					GameInfo g = d.base;
+					g.serial = size > 0 ? ReadSerial(g.path) : std::string();
+					if (m_stop)
+						break;
+					const bool renamed = !g.serial.empty() && ApplyGameDbTitle(g);
+					if (g.serial.empty())
+					{
+						g.title = g.file + " (no disc)";
+						g.damaged = size > 0 ? "the disc in the " + g.file + " isn't a PS2 game" : "no PS2 disc in the " + g.file + " (put one in)";
+					}
+					else
+					{
+						if (!renamed)
+							g.title = g.serial;
+						g.stem = g.title;
+					}
+					ReadBadges(g, m_paths.settings_dir, m_paths.gs_ini, m_paths.patches_dir);
+					CoverImage spine, placeholder;
+					CoverService::PaintSpine(*m_fonts, g, spine);
+					CoverService::PaintPlaceholder(*m_fonts, g, placeholder);
+					spine.game = placeholder.game = d.index;
+					u.images.push_back(std::move(spine));
+					u.images.push_back(std::move(placeholder));
+					d.game = g;
+					d.have_cover = false;
+					std::printf("[frontend] drive watcher: %s: %s\n", g.file.c_str(),
+						g.serial.empty() ? (size > 0 ? "a disc that isn't a PS2 game" : "no disc") : (g.serial + ", " + g.title).c_str());
+					std::fflush(stdout);
+				}
+				if (!d.game.serial.empty() && !d.have_cover)
+				{
+					CoverFinder finder(m_paths.covers_dir, m_paths.cache_dir);
+					std::vector<uint8_t> bytes;
+					for (const CoverFile& f : finder.Find(d.game))
+					{
+						CoverImage img;
+						if (ReadWholeFile(f.path, bytes) && CoverService::Decode(bytes, 1024, img))
+						{
+							img.kind = CoverImage::Cover;
+							img.game = d.index;
+							img.source = f.source;
+							u.images.push_back(std::move(img));
+							d.have_cover = true;
+							std::printf("[frontend] drive watcher: cover for %s (%s)\n", d.game.title.c_str(), f.source);
+							std::fflush(stdout);
+							break;
+						}
+					}
+				}
+				if (!changed && u.images.empty())
+					continue;
+				u.game = d.game;
+				std::lock_guard<std::mutex> lock(m_mutex);
+				m_updates.push_back(std::move(u));
+			}
+			for (int i = 0; i < 20 && !m_stop; i++)
+				usleep(100 * 1000);
+		}
+	}
+
+	OrbisFrontendPaths m_paths;
+	const Fonts* m_fonts = nullptr;
+	std::vector<Drive> m_drives;
+	std::mutex m_mutex;
+	std::vector<DriveUpdate> m_updates;
+	std::atomic<bool> m_stop{false};
+	std::atomic<bool> m_done{false};
+};
+} // namespace
+
 std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* build_tag, bool* ran)
 {
 	*ran = false;
@@ -1630,7 +1818,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 			if (g.serial.empty())
 			{
 				g.title = g.file + " (no disc)";
-				g.damaged = "no PS2 disc in the " + g.file + " (put one in and reopen PS5SX2)";
+				g.damaged = "no PS2 disc in the " + g.file + " (put one in)";
 			}
 			else
 			{
@@ -1854,6 +2042,8 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	acfg.bios_problem = paths.bios_problem;
 	acfg.bios_dir = paths.bios_dir;
 	bool ok = app.Init(&renderer, fonts, games, covers, acfg);
+	DriveWatcher* drives = new DriveWatcher(); // 5S2CD: discs put in after the shelf opened
+	drives->Start(games, paths, fonts);
 	std::printf("[frontend] up in %.0f ms (%s)\n", (Now() - t0) * 1000.0, ok ? "ok" : renderer.error().c_str());
 	std::fflush(stdout);
 	// vk-285-50: the QR tile's address, looked up again every few seconds in case the IP changes.
@@ -1900,6 +2090,11 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 			in.l2 = (pd.buttons & kPadL2) || pd.l2 > 160; // vk-285-116
 			in.r2 = (pd.buttons & kPadR2) || pd.r2 > 160;
 			in.l3 = pd.buttons & kPadL3; // PS2CD
+		}
+		for (DriveUpdate du; drives->Poll(du);)
+		{
+			games[static_cast<size_t>(du.index)] = du.game;
+			app.UpdateDrive(du.index, du.game, du.images);
 		}
 		app.Update(dt, in);
 		app.Build(frame, Clock());
@@ -1977,6 +2172,12 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	const bool system_menu = app.SystemMenuChosen(); // 2026-10-08
 	renderer.WaitIdle();
 	app.Shutdown();
+	// 5S2CD: the drive watcher first (it may be inside a disc read; then it, and the fonts it paints with, stay alive).
+	const bool drives_stopped = drives->Stop(3000);
+	if (drives_stopped)
+		delete drives;
+	else
+		std::printf("[frontend] the drive watcher is still reading a disc; leaving it to end on its own\n");
 	// The worker may be inside a download: stop it from starting another, fail the one in flight,
 	// give it a moment, then leave it behind if need be.
 	covers->RequestStop();
@@ -2008,7 +2209,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	renderer.Shutdown();
 	display->Destroy();
 	delete display;
-	if (stopped)
+	if (stopped && drives_stopped)
 	{
 		delete covers;
 		delete fonts;

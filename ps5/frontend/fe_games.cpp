@@ -1081,9 +1081,11 @@ void ScanDir(const std::string& dir, std::vector<GameInfo>& games, std::vector<s
 		// with a disc (the sheet's Disc image row; main-boot.cpp boots it as PCSX2 boots an ELF).
 		if (IsElfName(file.c_str()))
 		{
-			char magic[4] = {};
+			// 5S2CD (2026-10-10): and a PS2 one (e_machine 8, MIPS): PS5 payloads (x86-64, like relaunch.elf) aren't games.
+			unsigned char head[20] = {};
 			const int fd = open(g.path.c_str(), O_RDONLY);
-			const bool elf = fd >= 0 && read(fd, magic, sizeof(magic)) == 4 && std::memcmp(magic, "\x7f" "ELF", 4) == 0;
+			const bool elf = fd >= 0 && read(fd, head, sizeof(head)) == static_cast<ssize_t>(sizeof(head)) &&
+				std::memcmp(head, "\x7f" "ELF", 4) == 0 && (head[18] | (head[19] << 8)) == 8;
 			if (fd >= 0)
 				close(fd);
 			if (!elf)
