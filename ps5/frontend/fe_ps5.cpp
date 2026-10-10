@@ -1794,6 +1794,270 @@ private:
 	std::atomic<bool> m_stop{false};
 	std::atomic<bool> m_done{false};
 };
+// 2026-10-10 (5S2CD, AI-assisted; user: "copy the game by choice from the shelf"): a drive's disc copied to a disc image
+// while the shelf stays open. Whole 2048-byte sectors with pread() as ProsperoDisc.cpp reads them (DVD: the disc as it
+// is; CD: each Mode 2 Form 1 sector's data, the ISO PCSX2 reads). Into "<folder>/<Title> (<SERIAL>).iso.part", renamed
+// to .iso when complete; a sector that won't read after a retry is written as zeros and counted.
+class DiscCopier
+{
+public:
+	bool Start(const GameInfo& g, const std::string& folder, const std::string& place, std::string& error)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_running)
+		{
+			error = "a disc is already being copied";
+			return false;
+		}
+		if (g.drive.empty() || g.serial.empty())
+		{
+			error = "no PS2 disc in the drive";
+			return false;
+		}
+		m_dev = g.drive;
+		m_title = g.title;
+		m_place = place;
+		std::string name;
+		for (size_t i = 0; i < g.title.size(); i++) // "Rally Fusion: Race of Champions" -> "Rally Fusion - Race of Champions"
+		{
+			const char c = g.title[i];
+			if (c == ':')
+				name += (i + 1 < g.title.size() && g.title[i + 1] == ' ') ? " -" : " - ";
+			else if (std::strchr("<>\"/\\|?*", c) || static_cast<unsigned char>(c) < 32)
+				name += '_';
+			else
+				name += c;
+		}
+		m_file = name + " (" + g.serial + ").iso";
+		m_folder = folder;
+		m_stop = false;
+		m_running = true;
+		m_done_line.clear();
+		m_line = "Copying " + m_title + " to the " + m_place + "...";
+		if (m_thread.joinable())
+			m_thread.join();
+		m_thread = std::thread([this] { Run(); });
+		return true;
+	}
+	void Stop() { m_stop = true; }
+	int Poll(std::string& line)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_running)
+		{
+			line = m_line;
+			return 1;
+		}
+		if (!m_done_line.empty())
+		{
+			line.swap(m_done_line);
+			return 2;
+		}
+		return 0;
+	}
+	// At the shelf's end: stop and wait up to `timeout_ms`; false while a read is still in the drive (the thread ends on its
+	// own then, and the object must stay alive).
+	bool Finish(int timeout_ms)
+	{
+		m_stop = true;
+		for (int waited = 0; waited < timeout_ms; waited += 10)
+		{
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				if (!m_running)
+					break;
+			}
+			usleep(10 * 1000);
+		}
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_running)
+			return false;
+		if (m_thread.joinable())
+			m_thread.join();
+		return true;
+	}
+
+private:
+	static bool MakeFolders(const std::string& path)
+	{
+		for (size_t i = 1; i <= path.size(); i++)
+			if (i == path.size() || path[i] == '/')
+			{
+				const std::string part = path.substr(0, i);
+				if (mkdir(part.c_str(), 0777) != 0 && errno != EEXIST)
+					return false;
+			}
+		return true;
+	}
+	void End(const std::string& line)
+	{
+		std::printf("[copy] %s\n", line.c_str());
+		std::fflush(stdout);
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_done_line = line;
+		m_running = false;
+	}
+	void Run()
+	{
+		const std::string path = m_folder + "/" + m_file;
+		const std::string part = path + ".part";
+		const int in = open(m_dev.c_str(), O_RDONLY);
+		off_t size = 0;
+		if (in < 0 || ioctl(in, DIOCGMEDIASIZE, &size) != 0 || size <= 0)
+		{
+			if (in >= 0)
+				close(in);
+			End("Couldn't copy " + m_title + ": the disc can't be read");
+			return;
+		}
+		struct stat st = {};
+		if (stat(path.c_str(), &st) == 0 && st.st_size == size)
+		{
+			close(in);
+			End(m_title + " is already copied to the " + m_place + " (" + m_file + ")");
+			return;
+		}
+		if (!MakeFolders(m_folder))
+		{
+			close(in);
+			End("Couldn't copy " + m_title + ": can't make the folder " + m_folder);
+			return;
+		}
+		const int out = open(part.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (out < 0)
+		{
+			close(in);
+			End("Couldn't copy " + m_title + ": can't write to the " + m_place + " (" + std::strerror(errno) + ")");
+			return;
+		}
+		std::printf("[copy] %s -> %s (%lld bytes)\n", m_dev.c_str(), part.c_str(), static_cast<long long>(size));
+		std::fflush(stdout);
+		constexpr size_t kSector = 2048, kChunk = 512 * kSector; // 1 MiB a read
+		std::vector<uint8_t> buf(kChunk);
+		long long bad = 0;
+		std::string failure;
+		const double t0 = Now();
+		double shown = 0;
+		off_t pos = 0;
+		while (pos < size)
+		{
+			if (m_stop)
+			{
+				failure = "stopped";
+				break;
+			}
+			const size_t want = static_cast<size_t>(std::min<off_t>(static_cast<off_t>(kChunk), size - pos));
+			ssize_t got = pread(in, buf.data(), want, pos);
+			if (got != static_cast<ssize_t>(want))
+			{
+				// sector by sector, each tried twice; what still fails is zeros
+				for (size_t off = 0; off < want; off += kSector)
+				{
+					bool ok = false;
+					for (int attempt = 0; attempt < 2 && !ok; attempt++)
+						ok = pread(in, buf.data() + off, kSector, pos + static_cast<off_t>(off)) == static_cast<ssize_t>(kSector);
+					if (!ok)
+					{
+						std::memset(buf.data() + off, 0, kSector);
+						bad++;
+					}
+				}
+				if (DriveMediaSize(m_dev) <= 0)
+				{
+					failure = "the disc was taken out";
+					break;
+				}
+			}
+			const uint8_t* p = buf.data();
+			size_t left = want;
+			while (left > 0)
+			{
+				const ssize_t w = write(out, p, left);
+				if (w <= 0)
+					break;
+				p += w;
+				left -= static_cast<size_t>(w);
+			}
+			if (left > 0)
+			{
+				failure = std::string("can't write to the ") + m_place + " (" + std::strerror(errno) + ")";
+				break;
+			}
+			pos += static_cast<off_t>(want);
+			const double now = Now();
+			if (now - shown >= 0.5)
+			{
+				shown = now;
+				const double rate = pos / std::max(0.001, now - t0); // bytes a second
+				const int pct = static_cast<int>(pos * 100 / size);
+				const int left_s = static_cast<int>((size - pos) / std::max(1.0, rate));
+				char line[512];
+				std::snprintf(line, sizeof(line), "Copying %s to the %s: %d%% (%lld of %lld MB, %.1f MB/s), %s left",
+					m_title.c_str(), m_place.c_str(), pct, static_cast<long long>(pos >> 20), static_cast<long long>(size >> 20),
+					rate / 1048576.0,
+					left_s >= 90 ? (std::to_string((left_s + 30) / 60) + " min").c_str() : (std::to_string(left_s) + " s").c_str());
+				std::lock_guard<std::mutex> lock(m_mutex);
+				m_line = line;
+			}
+		}
+		close(in);
+		if (!failure.empty())
+		{
+			close(out);
+			unlink(part.c_str());
+			End(failure == "stopped" ? "Copy of " + m_title + " stopped; the unfinished file was removed"
+			                         : "Couldn't copy " + m_title + ": " + failure);
+			return;
+		}
+		fsync(out);
+		close(out);
+		unlink(path.c_str());
+		if (rename(part.c_str(), path.c_str()) != 0)
+		{
+			End("Couldn't copy " + m_title + ": can't name the copy " + m_file);
+			return;
+		}
+		const int secs = static_cast<int>(Now() - t0);
+		std::printf("[copy] done: %s, %lld bytes in %d s, %lld unreadable sectors\n", path.c_str(), static_cast<long long>(size),
+			secs, bad);
+		End("Copied " + m_title + " to the " + m_place + (bad ? " (" + std::to_string(bad) + " sectors couldn't be read)" : std::string()) +
+		    ". It's on the shelf the next time 5S2CD opens.");
+	}
+
+	std::mutex m_mutex;
+	std::thread m_thread;
+	std::atomic<bool> m_stop{false};
+	bool m_running = false;
+	std::string m_dev, m_title, m_place, m_folder, m_file, m_line, m_done_line;
+};
+
+// 2026-10-10 (5S2CD): where a disc can be copied: each USB drive with files on it (its PS5SX2/games folder, which PS5SX2
+// lists), then the PS5's internal storage (the games folder).
+std::vector<std::pair<std::string, std::string>> DiscCopyPlaces(const std::string& internal_games)
+{
+	std::vector<std::pair<std::string, std::string>> usb, places;
+	for (int i = 0; i < 8; i++)
+	{
+		const std::string root = "/mnt/usb" + std::to_string(i);
+		DIR* d = opendir(root.c_str());
+		if (!d)
+			continue;
+		bool any = false;
+		while (struct dirent* e = readdir(d))
+			if (std::strcmp(e->d_name, ".") != 0 && std::strcmp(e->d_name, "..") != 0)
+			{
+				any = true;
+				break;
+			}
+		closedir(d);
+		if (any)
+			usb.emplace_back("", root + "/PS5SX2/games");
+	}
+	for (size_t i = 0; i < usb.size(); i++)
+		places.emplace_back(usb.size() == 1 ? std::string("USB drive") : "USB drive " + std::to_string(i + 1), usb[i].second);
+	places.emplace_back("internal storage", internal_games);
+	return places;
+}
 } // namespace
 
 std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* build_tag, bool* ran)
@@ -2038,6 +2302,20 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	acfg.folder_places.push_back({"Extended storage", "/mnt/ext0"});
 	acfg.folder_places.push_back({"Extended storage 2", "/mnt/ext1"});
 	acfg.folder_places.push_back({"NFS shares", "/nfs"}); // OrbisNfs.cpp: a folder while shares are set
+	DiscCopier* copier = new DiscCopier(); // 2026-10-10 (5S2CD): Copy this disc
+	{
+		const std::string internal_games = paths.games_dir;
+		acfg.disc_copy.places = [internal_games] { return DiscCopyPlaces(internal_games); };
+		acfg.disc_copy.start = [copier, internal_games](const GameInfo& g, const std::string& folder, std::string& error) {
+			std::string place = "internal storage";
+			for (const auto& p : DiscCopyPlaces(internal_games))
+				if (p.second == folder)
+					place = p.first;
+			return copier->Start(g, folder, place, error);
+		};
+		acfg.disc_copy.stop = [copier] { copier->Stop(); };
+		acfg.disc_copy.poll = [copier](std::string& line) { return copier->Poll(line); };
+	}
 	acfg.bios_present = paths.bios_check; // vk-285-134
 	acfg.bios_problem = paths.bios_problem;
 	acfg.bios_dir = paths.bios_dir;
@@ -2172,6 +2450,11 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	const bool system_menu = app.SystemMenuChosen(); // 2026-10-08
 	renderer.WaitIdle();
 	app.Shutdown();
+	// 5S2CD: a disc copy stops with the shelf (its unfinished file is removed); left behind if a read is still in the drive.
+	if (copier->Finish(3000))
+		delete copier;
+	else
+		std::printf("[frontend] the disc copy is still stopping; leaving it to end on its own\n");
 	// 5S2CD: the drive watcher first (it may be inside a disc read; then it, and the fonts it paints with, stay alive).
 	const bool drives_stopped = drives->Stop(3000);
 	if (drives_stopped)

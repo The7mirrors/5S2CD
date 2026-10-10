@@ -33,6 +33,18 @@ struct Input
 	bool l3 = false; // PS2CD (2026-10-10): on the shelf, favorite / not
 };
 
+// 2026-10-10 (5S2CD): copying a drive's disc to a disc image (fe_ps5.cpp's DiscCopier). places: where it can go now
+// (label, folder); start: begins copying `g` (a drive with a disc) into `folder` (false + error when it can't); stop: asks
+// it to stop; poll: 0 nothing, 1 running (line: the progress), 2 just ended (line: how; given once).
+struct DiscCopyService
+{
+	std::function<std::vector<std::pair<std::string, std::string>>()> places;
+	std::function<bool(const GameInfo& g, const std::string& folder, std::string& error)> start;
+	std::function<void()> stop;
+	std::function<int(std::string& line)> poll;
+	explicit operator bool() const { return static_cast<bool>(start); }
+};
+
 struct AppConfig
 {
 	std::string build_tag;   // shown small in the corner
@@ -59,6 +71,7 @@ struct AppConfig
 	// vk-285-135 (AI-assisted): the sheet for all games' Folders rows and their picker start from these places (label, path),
 	// those that are folders when it opens (the drives come and go); empty: no Folders rows.
 	std::vector<std::pair<std::string, std::string>> folder_places;
+	DiscCopyService disc_copy; // 2026-10-10 (5S2CD): unset: no Copy this disc rows
 };
 
 class App
@@ -208,6 +221,7 @@ private:
 	int m_tab = 0; // 2026-10-09: the shelf tab Circle picks (kShelfTabNames in fe_app.cpp)
 	// vk-285-137: a line above the title for a few seconds (a game hidden, hidden games shown or not).
 	std::string m_note_text;
+	bool m_copy_running = false; // 2026-10-10 (5S2CD): a disc is being copied (DiscCopyService::poll)
 	double m_note_time = -10;
 
 	int m_selected = 0;

@@ -517,11 +517,13 @@ void OptionsSheet::Open(const OptionsPaths& paths, const GameInfo* game)
 		m_header = "# " + game->title + (game->serial.empty() ? std::string() : " (" + game->serial + ")");
 		m_game_fixes = ManualFixSettings(game->serial); // 2026-10-08
 		m_elf = IsElfName(game->file.c_str());          // 2026-10-08
+		m_drive_disc = !game->drive.empty() && !game->serial.empty(); // 2026-10-10 (5S2CD)
 	}
 	else
 	{
 		m_game_fixes.clear();
 		m_elf = false;
+		m_drive_disc = false;
 		m_title = "All games";
 		m_serial.clear();
 		m_id = "@global";
@@ -576,6 +578,17 @@ void OptionsSheet::BuildRows()
 	if (m_tab == kTabAchievements)
 		return; // Read-only browser is rendered by App (AI-assisted).
 	const bool settings = m_tab == kTabSettings;
+	// 2026-10-10 (5S2CD, AI-assisted; user: "copy the game by choice from the shelf"): a disc in a drive can be copied to
+	// a file, first on its sheet; one row per place, so the place is picked each time.
+	if (settings && m_drive_disc && (m_paths.copy_running || !m_paths.copy_places.empty()))
+	{
+		add(Kind::Header, "Copy this disc");
+		if (m_paths.copy_running)
+			add(Kind::CopyDisc, "Stop the copy").target.clear();
+		else
+			for (const auto& place : m_paths.copy_places)
+				add(Kind::CopyDisc, "Copy to " + place.first).target = place.second;
+	}
 	if (settings && (m_has_preset || !m_global))
 		add(Kind::Recommended, m_global ? "Recommended for all games" : "Recommended settings");
 	// vk-285-135 (AI-assisted; swordpdf: "i also want to pick a folder though the browser in the shelf"): where the games and the
@@ -713,6 +726,8 @@ std::string OptionsSheet::Value(const Row& r) const
 		}
 		case Kind::SystemMenu:
 			return "Start";
+		case Kind::CopyDisc: // 2026-10-10 (5S2CD)
+			return r.target.empty() ? "Stop" : "Copy";
 		case Kind::GameFolders: // vk-285-135
 		{
 			const size_t n = SplitFolderList(OwnValue(kGameFoldersKey)).size();
@@ -903,6 +918,12 @@ std::string OptionsSheet::Help(const Row& r) const
 				h += " Now: " + JoinFolderList(list) + ".";
 			return h;
 		}
+		case Kind::CopyDisc: // 2026-10-10 (5S2CD)
+			if (r.target.empty())
+				return "Cross twice: stops the copy and removes the unfinished file. The disc itself is untouched.";
+			return "Cross twice: copies this disc to " + r.target + " as a disc image (\"" + m_title + " (" + m_serial +
+			       ").iso\"). The shelf stays open and shows the progress; the copy is on the shelf the next time 5S2CD opens, "
+			       "and plays without the disc. A CD takes a few minutes, a DVD up to half an hour.";
 		case Kind::SystemMenu:
 			return "Cross twice: the PS2's own menu with no disc in, as a PS2 with its tray empty: the memory card browser (copy and "
 			       "delete saves), the clock, the language. The memory cards set here are in the slots. Back to the shelf as from a game.";
@@ -1216,6 +1237,17 @@ bool OptionsSheet::Activate(const Row& r, double now)
 		case Kind::BiosFolder:
 		case Kind::NfsShares:
 			m_folder_request = r.kind;
+			return true;
+		case Kind::CopyDisc: // 2026-10-10 (5S2CD): the first press arms, a second within 4 s asks the app to copy (or stop)
+			if (!(m_armed_row == index && now < m_armed_until))
+			{
+				m_armed_row = index;
+				m_armed_until = now + 4.0;
+				m_status = r.target.empty() ? "Press again to stop the copy" : "Press again to copy the disc";
+				return false;
+			}
+			m_armed_row = -1;
+			m_copy_request = r.target.empty() ? "-" : r.target;
 			return true;
 		case Kind::SystemMenu: // 2026-10-08: the first press arms, a second within 4 s asks the app to start it
 			if (!(m_armed_row == index && now < m_armed_until))

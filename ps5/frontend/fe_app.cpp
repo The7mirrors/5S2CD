@@ -409,6 +409,17 @@ void App::Update(double dt, const Input& in)
 {
 	m_time += dt;
 	m_account.Poll(m_cfg.achievements);
+	if (m_cfg.disc_copy) // 2026-10-10 (5S2CD): a disc being copied: its progress, then how it ended
+	{
+		std::string line;
+		const int state = m_cfg.disc_copy.poll(line);
+		m_copy_running = state == 1;
+		if (state != 0 && !line.empty() && (state == 2 || m_time - m_refused_time > 6.0))
+		{
+			m_note_text = line;
+			m_note_time = m_time;
+		}
+	}
 	PollGameAchievements();
 	const float fdt = static_cast<float>(std::min(dt, 0.1));
 
@@ -553,6 +564,12 @@ void App::Update(double dt, const Input& in)
 					m_refused_time = m_time;
 					std::printf("[frontend] %s can't be read (%s): not started\n", picked.file.c_str(), picked.damaged.c_str());
 					std::fflush(stdout);
+					Sound(Sfx::Edge, 0.0f);
+				}
+				else if (m_copy_running) // 2026-10-10 (5S2CD)
+				{
+					m_refused_text = "A disc is being copied: wait until it's done, or stop it in the Square menu";
+					m_refused_time = m_time;
 					Sound(Sfx::Edge, 0.0f);
 				}
 				else if (BiosReady()) // vk-285-134
@@ -1222,6 +1239,12 @@ void App::OpenSheet(bool global)
 			if (!IsElfName(h.game.file.c_str()))
 				paths.disc_images.emplace_back(h.game.file, h.game.title);
 	}
+	if (g && !g->drive.empty() && !g->serial.empty() && m_cfg.disc_copy) // 2026-10-10 (5S2CD)
+	{
+		paths.copy_running = m_copy_running;
+		if (!m_copy_running)
+			paths.copy_places = m_cfg.disc_copy.places();
+	}
 	m_sheet.Open(paths, g);
 	m_sheet_saved_at_open = 0;
 	if (!m_sheet_open)
@@ -1510,6 +1533,41 @@ void App::UpdateSheet(double dt, const Input& in)
 		}
 		else if (pressed(in.triangle, m_prev.triangle))
 			after(m_sheet.Reset(row));
+		return;
+	}
+
+	// 2026-10-10 (5S2CD): "Copy this disc": Cross twice starts copying the drive's disc to the row's place (or stops it).
+	if (row.kind == OptionsSheet::Kind::CopyDisc)
+	{
+		if (pressed(in.cross, m_prev.cross))
+		{
+			after(m_sheet.Activate(row, now));
+			const std::string asked = m_sheet.TakeCopyRequest();
+			if (asked == "-")
+			{
+				m_cfg.disc_copy.stop();
+				CloseSheet();
+			}
+			else if (!asked.empty() && !m_games.empty())
+			{
+				std::string error;
+				const GameInfo g = m_games[static_cast<size_t>(m_selected)];
+				CloseSheet();
+				if (m_cfg.disc_copy.start(g, asked, error))
+				{
+					m_copy_running = true;
+					m_note_text = "Copying " + g.title + "...";
+					m_note_time = m_time;
+					Sound(Sfx::Launch, 0.0f);
+				}
+				else
+				{
+					m_refused_text = "Couldn't copy the disc: " + error;
+					m_refused_time = m_time;
+					Sound(Sfx::Edge, 0.0f);
+				}
+			}
+		}
 		return;
 	}
 
@@ -2100,7 +2158,8 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 		const float mid_y = ry + bh * 0.5f + 13 * k; // the text's baseline, centred in the row
 		const float lpx = 40 * k, vpx = 38 * k; // 2026-10-05: 38 and 36 before
 		const bool action = r.kind == OptionsSheet::Kind::Recommended || r.kind == OptionsSheet::Kind::ResetAll ||
-		                    r.kind == OptionsSheet::Kind::SystemMenu; // 2026-10-08
+		                    r.kind == OptionsSheet::Kind::SystemMenu || // 2026-10-08
+		                    r.kind == OptionsSheet::Kind::CopyDisc;     // 2026-10-10 (5S2CD)
 
 		std::string value = m_sheet.Value(r);
 		const bool armed = m_sheet.Armed(r, m_time);

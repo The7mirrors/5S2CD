@@ -68,6 +68,10 @@ struct OptionsPaths
 	std::function<void(const std::string&)> log;
 	// 2026-10-08: the shelf's disc images (file name, title), for an ELF's Disc image row.
 	std::vector<std::pair<std::string, std::string>> disc_images;
+	// 2026-10-10 (5S2CD): a drive's sheet: where its disc can be copied (label, folder), and whether a copy is running
+	// (then the sheet offers to stop it instead).
+	std::vector<std::pair<std::string, std::string>> copy_places;
+	bool copy_running = false;
 };
 
 // 2026-10-08: an ELF's disc image, by its file name as the shelf lists it (main-boot.cpp finds it in the game folders).
@@ -104,6 +108,7 @@ public:
 		BiosFolder,  // vk-285-135: where the BIOS is looked for first (the folder picker)
 		NfsShares,   // vk-285-135: NFS shares' addresses (the app's list, the PS5's keyboard)
 		CheatDisc,   // vk-285-139: the sheet for all games: the cheat disc (kCheatDiscKey, one of the shelf's images)
+		CopyDisc,    // 2026-10-10 (5S2CD): a drive's sheet: copy its disc to Row::target ("" = stop the running copy)
 	};
 
 	enum class From
@@ -120,6 +125,7 @@ public:
 		const OptionDef* def = nullptr;
 		int slot = 0;           // Card: 1 or 2
 		std::string patch_desc; // Patch: its description
+		std::string target;     // CopyDisc: the folder the disc goes to ("" = stop the copy)
 	};
 
 	// `game` null: the sheet for all games (gs.ini). The tab stays as it was.
@@ -139,6 +145,14 @@ public:
 		const bool asked = m_system_menu;
 		m_system_menu = false;
 		return asked;
+	}
+	// 2026-10-10 (5S2CD): Cross twice on a Copy this disc row: TakeCopyRequest gives its folder once ("-" = stop the copy,
+	// "" = nothing asked).
+	std::string TakeCopyRequest()
+	{
+		std::string r;
+		r.swap(m_copy_request);
+		return r;
 	}
 	// vk-285-135: the sheet for all games gets the Folders rows (game folders, BIOS folder, NFS shares). Cross on one asks
 	// the app for its picker: TakeFolderRequest gives that row's kind once (else Kind::Header).
@@ -220,6 +234,8 @@ private:
 	bool m_folder_rows = false; // vk-285-135
 	Kind m_folder_request = Kind::Header;
 	bool m_elf = false; // 2026-10-08: this sheet's game is an ELF (the Disc image row)
+	bool m_drive_disc = false; // 2026-10-10 (5S2CD): this sheet's game is a disc in a drive (the Copy this disc rows)
+	std::string m_copy_request;
 	int m_armed_row = -1;
 	double m_armed_until = 0;
 	std::string m_status;
