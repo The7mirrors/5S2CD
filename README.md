@@ -31,9 +31,8 @@ and the in-game menu.
 > **Good to know:** the PS5 always says **"Unsupported Disc"** when you insert a PS2 disc. That's the console's own
 > message and it's harmless: choose *Go to Home* and open 5S2CD (or the game's tile).
 >
-> **Limits:** game music and sound work normally. Only the few PS2 CDs that also carry separate audio-CD tracks
-> (music you could play in a CD player) are silent during those tracks, because the PS5 can't read audio-CD tracks.
-> The PS5's own drive loads a little slower than a USB drive, and going *back to the menu* restarts the app.
+> **Limits:** the PS5's own drive loads a little slower than a USB drive, and going *back to the menu* restarts the
+> app.
 
 <sub>Based on PS5SX2 vk-285-139. The original PS5SX2 readme is kept as [README-PS5SX2.md](README-PS5SX2.md).</sub>
 
