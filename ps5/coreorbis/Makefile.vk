@@ -280,6 +280,10 @@ CFLAGS := -O3 -DNDEBUG -march=znver2 -msse4.1 -mavx2 -mno-vzeroupper $(NARROW_FL
 # m_orbis_submit_draws, so they read its fields 8 bytes off (a clean build of the same commit shows it).
 CXXFLAGS += -MMD -MP
 CFLAGS += -MMD -MP
+# 5S2CD (2026-10-10): source paths in the binary relative to the repository (assert messages), not the build machine's
+PREFIX_MAP := -ffile-prefix-map=$(abspath ../..)/=
+CXXFLAGS += $(PREFIX_MAP)
+CFLAGS += $(PREFIX_MAP)
 
 # vk-285-108: CHD images (.chd). PCSX2's ChdFileReader (CDVD_SRCS) reads them through libchdr, whose codecs
 # need 3rdparty/lzma's LZMA decoder and zlib and zstd; the SDK has neither of those two, so their
