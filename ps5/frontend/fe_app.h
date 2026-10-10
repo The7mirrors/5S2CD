@@ -30,6 +30,7 @@ struct Input
 	// vk-285-114: the options sheet's buttons.
 	bool up = false, down = false, square = false, triangle = false, circle = false;
 	bool l2 = false, r2 = false; // vk-285-116: the sheet's tabs
+	bool l3 = false; // PS2CD (2026-10-10): on the shelf, favorite / not
 };
 
 struct AppConfig
@@ -113,6 +114,7 @@ private:
 	// ApplyHidden sorts the games back into the two, keeps `keep` (such an index) selected or else the next game on the
 	// shelf, and says whether the shelf changed.
 	bool ApplyHidden(int keep);
+	int CountInTab(int tab) const; // 2026-10-09
 	int PositionOf(int index) const; // m_games position of an index from Init's list; -1 when shelved
 	void Sound(Sfx sfx, float pan);
 
@@ -198,6 +200,7 @@ private:
 	std::vector<Shelved> m_shelved;
 	std::vector<int> m_index;
 	bool m_show_hidden = false;
+	int m_tab = 0; // 2026-10-09: the shelf tab Circle picks (kShelfTabNames in fe_app.cpp)
 	// vk-285-137: a line above the title for a few seconds (a game hidden, hidden games shown or not).
 	std::string m_note_text;
 	double m_note_time = -10;

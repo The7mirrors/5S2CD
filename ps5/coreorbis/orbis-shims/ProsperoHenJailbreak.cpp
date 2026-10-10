@@ -200,7 +200,7 @@ void orbis_log_hen_config()
         buf[total < 0 ? 0 : total] = 0;
         bool has_id = false, has_enabled = false;
         for (ssize_t i = 0; i + 9 <= total; ++i) {
-            if (!__builtin_memcmp(buf + i, "PPSA99203", 9))
+            if (!__builtin_memcmp(buf + i, "PPSA99213", 9))
                 has_id = true;
             if (!__builtin_memcmp(buf + i, "enabled", 7))
                 has_enabled = true;

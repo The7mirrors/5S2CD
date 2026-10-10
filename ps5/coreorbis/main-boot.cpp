@@ -1,5 +1,9 @@
 // pcsx2-orbis boot smoke: VMManager init + Execute on worker + pc sampling.
 #include <atomic>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <vector>
 #include <cstdarg>
 #include <vector>
 #include <algorithm>
@@ -1817,15 +1821,81 @@ void OrbisBackToMenuCpu()
   OrbisExitApp(status);
 }
 
+
+// PS5SX2 Disc (2026-10-09, AI-assisted): instead of LoadExec (it never came back with the public RADV driver), the relaunch
+// payload (/data/PCSX2/relaunch.elf) goes to the console's ELF loader, which runs it as its own process: it waits until this
+// app has closed, then starts it again, so "back to the menu" still ends on the shelf. The connection isn't waited on: the
+// payload outlives us.
+static bool orbis_send_relaunch()
+{
+  FILE* f = fopen("/data/PCSX2/relaunch.elf", "rb");
+  if (!f)
+    return false;
+  std::vector<char> elf;
+  char chunk[65536];
+  size_t got;
+  while ((got = fread(chunk, 1, sizeof(chunk), f)) > 0)
+    elf.insert(elf.end(), chunk, chunk + got);
+  fclose(f);
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0)
+    return false;
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(9021);
+  addr.sin_addr.s_addr = htonl(0x7F000001);
+  if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
+  {
+    close(fd);
+    return false;
+  }
+  size_t off = 0;
+  while (off < elf.size())
+  {
+    const ssize_t w = send(fd, elf.data() + off, elf.size() - off, 0);
+    if (w <= 0)
+      break;
+    off += static_cast<size_t>(w);
+  }
+  shutdown(fd, SHUT_WR);
+  usleep(300000); // the loader has the file before we go
+  close(fd);
+  return off == elf.size() && !elf.empty();
+}
+
+
+// PS5SX2 disc tiles (2026-10-09, AI-assisted): /app0/disc-tile.txt names the drive of the disc this tile stands for; the
+// disc watcher payload writes it into each tile it makes. Empty for PS5SX2 Disc itself.
+static std::string s_tile_drive;
+static void orbis_read_tile_drive()
+{
+  FILE* f = fopen("/app0/disc-tile.txt", "rb");
+  if (!f)
+    return;
+  char line[64] = {};
+  const size_t n = fread(line, 1, sizeof(line) - 1, f);
+  fclose(f);
+  line[n] = '\0';
+  std::string drive(line);
+  while (!drive.empty() && (drive.back() == '\n' || drive.back() == '\r' || drive.back() == ' '))
+    drive.pop_back();
+  if (drive.rfind("/dev/cd", 0) == 0 && drive.size() <= 10)
+    s_tile_drive = drive;
+  printf("[boot] disc tile: %s\n", s_tile_drive.empty() ? "(bad disc-tile.txt, ignored)" : s_tile_drive.c_str());
+  fflush(stdout);
+}
+
 // vk-285-109: our own eboot again, into the shelf, after a start that failed (the VM never ran, so no memory
 // card or NVRAM to write back). Returns when LoadExec doesn't take.
 static void orbis_restart_to_menu()
 {
-  const char* path = "/data/homebrew/PPSA99203/eboot.bin";
+  const char* path = "/data/homebrew/PPSA99213/eboot.bin";
   struct stat st{};
   if (stat(path, &st) != 0)
     path = "/app0/eboot.bin";
-  printf("[menu] the game didn't start: re-executing %s\n", path);
+  printf("[menu] the game didn't start: PS5SX2 Disc closes (re-executing hangs with the public driver)\n");
+  fflush(stdout);
+  orbis_exit_quietly(1);
   orbis_output_default();
   orbis_log_drain();
   fflush(stdout);
@@ -1854,10 +1924,18 @@ static void orbis_back_to_menu()
   // a notification says so when they don't make it. Returns at once when nothing is waiting.
   Achievements::OrbisFlushBeforeExit(5000);
 #endif
-  const char* path = "/data/homebrew/PPSA99203/eboot.bin";
+  const char* path = "/data/homebrew/PPSA99213/eboot.bin";
   struct stat st{};
   if (stat(path, &st) != 0)
     path = "/app0/eboot.bin";
+  // PS5SX2 Disc (2026-10-09, AI-assisted): LoadExec of our own eboot never came back with the public RADV driver (the
+  // screen stayed frozen); the memory cards and NVRAM are written above, so the app closes and opens again from home.
+  {
+    const bool sent = s_tile_drive.empty() && orbis_send_relaunch(); // a disc tile closes to home
+    printf("[menu] PS5SX2 Disc: closing; the relaunch payload %s\n", sent ? "will reopen it on the shelf" : "couldn't be sent (reopen it from home)");
+    fflush(stdout);
+    orbis_exit_quietly(0);
+  }
   printf("[menu] re-executing %s\n", path);
   orbis_output_default();
   fflush(stdout);
@@ -2458,8 +2536,8 @@ static void orbis_wait_for_game_file(const std::string& path)
 
 static void orbis_vk_param_json()
 {
-  static const char* const paths[] = {"/mnt/sandbox/PPSA99203_000/app0/sce_sys/param.json", "/app0/sce_sys/param.json",
-                                      "/data/homebrew/PPSA99203/sce_sys/param.json"};
+  static const char* const paths[] = {"/mnt/sandbox/PPSA99213_000/app0/sce_sys/param.json", "/app0/sce_sys/param.json",
+                                      "/data/homebrew/PPSA99213/sce_sys/param.json"};
   std::string tried;
   for (const char* path : paths)
   {
@@ -2712,14 +2790,15 @@ int main()
   // from the cache this fills. At most 30 s, and only when covers are missing.
   static std::string s_game_path;
   bool frontend_ran = false;
+  orbis_read_tile_drive();
 #ifdef ORBIS_VULKAN
   orbis_log_flag_access("before the jailbreak");
   orbis_scan_usb("before the jailbreak"); // test build 1: whether the sandbox shows USB drives yet
-  if (!orbis_flag("nofrontend") && !orbis_flag("nomenu") && !orbis_flag("nocoverdl"))
+  if (s_tile_drive.empty() && !orbis_flag("nofrontend") && !orbis_flag("nomenu") && !orbis_flag("nocoverdl"))
     orbis_frontend_prefetch_covers(orbis_frontend_paths(true), 30.0, sys_notify);
 #endif
 
-  // Primary: etaHEN/OnionHEN download0 file-broker jailbreak (needs PPSA99203
+  // Primary: etaHEN/OnionHEN download0 file-broker jailbreak (needs PPSA99213
   // in the HEN app_jailbreak allowlist). Falls back to the legacy CMD ports.
   extern bool orbis_hen_jailbreak();
   extern bool orbis_probe_jit();
@@ -2775,7 +2854,7 @@ int main()
   // The new image re-runs this whole startup (HEN jailbreak included).
   {
     std::thread([]() {
-      const char* path = "/data/homebrew/PPSA99203/eboot.bin";
+      const char* path = "/data/homebrew/PPSA99213/eboot.bin";
       struct stat st0{};
       int rc0 = stat(path, &st0);
       printf("[boot] eboot watcher: path=%s rc=%d errno=%d size=%lld mtime=%lld\n", path, rc0,
@@ -2899,7 +2978,7 @@ int main()
   // HTTPS failed there on vk-285-41/42, with etaHEN's jailbreak; with the PS5SX2 Helper's it hasn't been
   // tried, and boot.log's "[frontend] cover ..." lines will show it. When it fails, the next start's
   // prefetch fetches them from cache/usb-games.txt, as before.
-  if (!orbis_flag("nofrontend") && !orbis_flag("nomenu"))
+  if (s_tile_drive.empty() && !orbis_flag("nofrontend") && !orbis_flag("nomenu"))
     s_game_path = orbis_frontend_run(orbis_frontend_paths(!orbis_flag("nocoverdl")), ORBIS_BUILD_TAG, &frontend_ran);
 #endif
 #ifdef ORBIS_VULKAN
@@ -2912,7 +2991,9 @@ int main()
   OrbisAchievementsWaitForLogin();
   OrbisAchievementsStopBrowser(); // pr9n: the shelf's achievement list isn't needed now (was: wait out its requests)
 #endif
-  if (!frontend_ran)
+  if (!s_tile_drive.empty())
+    s_game_path = s_tile_drive; // a disc tile: straight into its drive's disc
+  else if (!frontend_ran)
     s_game_path = orbis_select_game(OrbisDir("games").c_str(), "/data/PCSX2", ORBIS_BUILD_TAG); // vk-285-33: games/ too
   if (s_game_path.empty())
   {
@@ -2944,6 +3025,19 @@ int main()
     const size_t dot = stem.rfind('.');
     if (dot != std::string::npos && dot > 0)
       stem.erase(dot);
+    if (s_game_path.rfind("/dev/cd", 0) == 0)
+    {
+      // 2026-10-09: a disc drive's game: its own settings file, named after its title as the shelf names it (fe_ps5.cpp).
+      fe::GameInfo g;
+      g.path = s_game_path;
+      g.serial = fe::ReadSerial(s_game_path);
+      if (!g.serial.empty())
+      {
+        g.title = g.serial;
+        fe::ApplyGameDbTitle(g);
+        stem = g.title;
+      }
+    }
     s_game_ini_path = "/data/PCSX2/settings/" + stem + ".ini";
   }
 #ifdef ORBIS_VULKAN
@@ -3173,7 +3267,18 @@ int main()
   VMBootParameters params;
   params.filename = s_game_path; // vk-285-30
   // vk-285-139: a game's discs (and the cheat disc as disc 1 when the game starts from it).
-  if (!s_game_path.empty() && !(s_game_path.size() > 4 && strcasecmp(s_game_path.c_str() + s_game_path.size() - 4, ".elf") == 0))
+  const bool boot_disc = (s_game_path.size() > 5 && strcasecmp(s_game_path.c_str() + s_game_path.size() - 5, ".disc") == 0) ||
+    s_game_path.rfind("/dev/cd", 0) == 0; // 2026-10-09: a drive's shelf entry is its device
+  if (boot_disc)
+  {
+    // 2026-10-09 (AI-assisted): the disc in the PS5's drive (/dev/cd0) or a USB DVD drive (/dev/cd1...); GetValidDrive
+    // (ProsperoDisc.cpp) picks the one with a readable disc.
+    params.filename = s_game_path.rfind("/dev/cd", 0) == 0 ? s_game_path : std::string();
+    params.source_type = CDVD_SourceType::Disc;
+    printf("[boot] physical disc (%s)\n", s_game_path.c_str());
+    fflush(stdout);
+  }
+  else if (!s_game_path.empty() && !(s_game_path.size() > 4 && strcasecmp(s_game_path.c_str() + s_game_path.size() - 4, ".elf") == 0))
   {
     params.filename = orbis_disc_boot(s_game_path);
     if (params.filename != s_game_path)

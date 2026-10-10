@@ -5,6 +5,7 @@
 
 #include "fe_app.h"
 #include "fe_i18n.h"
+#include "fe_settings.h" // PS2CD: EditSettingsFile for L3's favorite
 
 #include <algorithm>
 #include <cctype>
@@ -205,6 +206,38 @@ int App::PositionOf(int index) const
 	return it != m_index.end() && *it == index ? static_cast<int>(it - m_index.begin()) : -1;
 }
 
+// 2026-10-09 (AI-assisted): the shelf's tabs, like PS5X360's library filters; Circle steps through the ones with games.
+namespace
+{
+constexpr int kShelfTabs = 4;
+const char* const kShelfTabNames[kShelfTabs] = {"All", "Disc drives", "Favorites", "Disc images"};
+bool ShelfTabHas(const GameInfo& g, int tab)
+{
+	std::string ext;
+	const size_t dot = g.file.rfind('.');
+	if (g.drive.empty() && dot != std::string::npos)
+		for (char c : g.file.substr(dot))
+			ext += (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+	switch (tab)
+	{
+		case 1: return !g.drive.empty();
+		case 2: return g.favorite;
+		case 3: return g.drive.empty() && ext != ".elf"; // disc image files: .iso .bin .img .chd .cso .zso
+		default: return true;
+	}
+}
+} // namespace
+
+int App::CountInTab(int tab) const
+{
+	int n = 0;
+	for (const GameInfo& g : m_games)
+		n += ShelfTabHas(g, tab) && (!g.hidden || m_show_hidden) ? 1 : 0;
+	for (const Shelved& h : m_shelved)
+		n += ShelfTabHas(h.game, tab) && (!h.game.hidden || m_show_hidden) ? 1 : 0;
+	return n;
+}
+
 bool App::ApplyHidden(int keep)
 {
 	struct Entry
@@ -228,7 +261,7 @@ bool App::ApplyHidden(int keep)
 	int at = -1, after = -1, before = -1;
 	for (Entry& e : all)
 	{
-		if (e.game.hidden && !m_show_hidden)
+		if ((e.game.hidden && !m_show_hidden) || !ShelfTabHas(e.game, m_tab)) // 2026-10-09: and the games outside the tab
 		{
 			m_shelved.push_back({std::move(e.game), e.slot, e.index});
 			continue;
@@ -385,7 +418,7 @@ void App::Update(double dt, const Input& in)
 	else
 	{
 		const bool any = in.left || in.right || in.cross || in.options || in.l1 || in.r1 || in.up || in.down || in.square || in.triangle ||
-		                 in.circle;
+		                 in.circle || in.l3; // PS2CD: L3
 		if (!m_released)
 			m_released = !any;
 		else
@@ -423,6 +456,39 @@ void App::Update(double dt, const Input& in)
 			}
 			if (in.r1 && !m_prev.r1)
 				Sound(Step(5) ? Sfx::JumpRight : Sfx::Edge, 0.25f);
+			// PS2CD (2026-10-10, user request): L3 makes the selected game a favorite, or not, at once -- the sheet's Favorite
+			// switch (PS5SX2/Favorite in the game's settings file). The badge changes now; the order the next time the shelf opens.
+			if (in.l3 && !m_prev.l3 && !m_games.empty() && !m_qr_big)
+			{
+				GameInfo& g = m_games[static_cast<size_t>(m_selected)];
+				const bool fav = !g.favorite;
+				const std::string path = m_cfg.options.settings_dir + "/" + g.stem + ".ini";
+				const std::string header = "# " + g.title + (g.serial.empty() ? std::string() : " (" + g.serial + ")");
+				std::vector<settings::Change> changes(1);
+				changes[0].kind = fav ? settings::Change::Set : settings::Change::Unset;
+				changes[0].key = "PS5SX2/Favorite";
+				changes[0].value = fav ? "true" : "";
+				std::string what, error;
+				if (settings::EditSettingsFile(path, header, changes, what, error))
+				{
+					g.favorite = fav;
+					if (m_cfg.refresh_game)
+						m_cfg.refresh_game(g);
+					m_note_text = (fav ? "Added to favorites: " : "Removed from favorites: ") + g.title;
+					m_note_time = m_time;
+					if (m_cfg.options.log)
+						m_cfg.options.log("shelf: L3: " + g.stem + ": " + (what.empty() ? std::string("no change") : what));
+					Sound(Sfx::Move, 0.0f);
+				}
+				else
+				{
+					m_refused_text = "Couldn't save the favorite: " + error;
+					m_refused_time = m_time;
+					Sound(Sfx::Edge, 0.0f);
+				}
+				std::printf("[frontend] L3: %s %s\n", g.stem.c_str(), fav ? "favorite" : "not a favorite");
+				std::fflush(stdout);
+			}
 			if (((in.cross && !m_prev.cross) || (in.options && !m_prev.options)) && !m_games.empty() && !m_qr_big)
 			{
 				const GameInfo& picked = m_games[static_cast<size_t>(m_selected)];
@@ -455,6 +521,31 @@ void App::Update(double dt, const Input& in)
 				m_qr_big = true;
 				Sound(Sfx::Move, 0.3f);
 			}
+			// 2026-10-09 (AI-assisted): Circle: the next shelf tab with games in it (All always), the selection kept when it's in it.
+			else if (!m_qr_big && in.circle && !m_prev.circle && m_sheet_anim < 0.05f)
+			{
+				const int keep = m_games.empty() ? 0 : m_index[static_cast<size_t>(m_selected)];
+				int next = 0;
+				for (int step = 1; step <= kShelfTabs; step++)
+				{
+					const int t = (m_tab + step) % kShelfTabs;
+					if (t == 0 || CountInTab(t) > 0)
+					{
+						next = t;
+						break;
+					}
+				}
+				m_tab = next;
+				ApplyHidden(keep);
+				m_scroll = static_cast<float>(m_selected);
+				m_select_time = m_time;
+				if (m_covers && !m_games.empty())
+					m_covers->SetSelected(m_index[static_cast<size_t>(m_selected)]);
+				m_note_text = std::string("Shelf: ") + kShelfTabNames[m_tab] + " (" + std::to_string(m_games.size()) + ")";
+				m_note_time = m_time;
+				std::printf("[frontend] shelf tab: %s, %zu games\n", kShelfTabNames[m_tab], m_games.size());
+				Sound(Sfx::Move, 0.0f);
+			}
 			// vk-285-114: Square opens the selected game's options sheet (the settings for all games when there is no game).
 			else if (!m_qr_big && in.square && !m_prev.square && m_sheet_anim < 0.05f)
 			{
@@ -486,7 +577,7 @@ void App::Update(double dt, const Input& in)
 		if (s.has_cover && s.cover_mix < 1.0f)
 			s.cover_mix = std::min(1.0f, s.cover_mix + fdt / 0.35f);
 
-	const float house[3] = {0.55f, 0.42f, 1.0f};
+	const float house[3] = {0.42f, 0.46f, 0.56f}; // PS2CD (2026-10-10): neutral, less purple (was 0.55, 0.42, 1.0)
 	float want[3] = {house[0], house[1], house[2]};
 	if (!m_slots.empty() && m_slots[static_cast<size_t>(m_selected)].has_glow)
 		for (int i = 0; i < 3; i++)
@@ -556,7 +647,7 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	bg.glow_color[0] = m_glow[0];
 	bg.glow_color[1] = m_glow[1];
 	bg.glow_color[2] = m_glow[2];
-	bg.glow_color[3] = 0.50f;
+	bg.glow_color[3] = 0.30f; // PS2CD (2026-10-10): a darker shelf (was 0.50)
 	bg.glow_pos[0] = centre.x;
 	bg.glow_pos[1] = centre.y;
 	bg.glow_pos[2] = 0.58f;
@@ -565,8 +656,9 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	bg.floor_glow[1] = floor_pt.y;
 	bg.floor_glow[2] = 0.30f;
 	bg.floor_glow[3] = 0.035f;
-	const float top[4] = {0.030f, 0.034f, 0.095f, 1}, mid[4] = {0.055f, 0.055f, 0.155f, 1},
-				bottom[4] = {0.010f, 0.010f, 0.026f, 1};
+	// PS2CD (2026-10-10): nearly black, less purple (was 0.030/0.034/0.095, 0.055/0.055/0.155, 0.010/0.010/0.026)
+	const float top[4] = {0.012f, 0.013f, 0.020f, 1}, mid[4] = {0.024f, 0.025f, 0.036f, 1},
+				bottom[4] = {0.004f, 0.004f, 0.006f, 1};
 	std::copy(top, top + 4, bg.top);
 	std::copy(mid, mid + 4, bg.mid);
 	std::copy(bottom, bottom + 4, bg.bottom);
@@ -880,6 +972,11 @@ void App::Build(FrameDesc& f, const std::string& clock)
 			hint("#L1", "#R1", Tr(Str::HintJump));
 		}
 		hint(icon::Square, nullptr, Tr(Str::HintSettings)); // vk-285-114
+		if (n > 0) // PS2CD: L3 favorite / not
+			hint("#L3", nullptr, m_games[static_cast<size_t>(m_selected)].favorite ? "Unfavorite" : "Favorite");
+		static std::string s_tab_hint; // 2026-10-09: the shelf tab, Circle for the next
+		s_tab_hint = std::string("Shelf: ") + kShelfTabNames[m_tab];
+		hint(icon::Circle, nullptr, s_tab_hint.c_str());
 		if (m_cfg.achievements.state && !m_qr_big)
 			hint("#L1", icon::Square, "RetroAchievements");
 		if (m_qr_size > 0)

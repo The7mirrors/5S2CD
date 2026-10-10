@@ -231,6 +231,7 @@ constexpr uint32_t kPadRight = 0x20, kPadLeft = 0x80, kPadCross = 0x4000, kPadOp
 // vk-285-114: the options sheet's buttons.
 constexpr uint32_t kPadUp = 0x10, kPadDown = 0x40, kPadTriangle = 0x1000, kPadCircle = 0x2000, kPadSquare = 0x8000;
 constexpr uint32_t kPadL2 = 0x100, kPadR2 = 0x200; // vk-285-116: the sheet's tabs
+constexpr uint32_t kPadL3 = 0x2; // PS2CD (2026-10-10): favorite / not on the shelf
 
 double Now()
 {
@@ -511,6 +512,7 @@ struct TexHttp
 };
 TexHttp g_texhttp;
 TexHttp g_patchhttp("pcsx2-patches", "patches"); // 2026-10-08: the online patches' own client (fe_patchdl.h)
+TexHttp g_coverhttp("pcsx2-covers", "covers"); // 2026-10-09 (AI-assisted): covers after the jailbreak (libhttp2 fails then)
 
 // The free space of a folder's disk for the texture packs, or UINT64_MAX when the console won't say (the manager then
 // skips its room check; a full disk still fails the writes, which it reports). Two ways crashed the app on the console:
@@ -1622,6 +1624,21 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		// vk-285-113: a CHD (or an ISO) named after its file shows the game's name from the game database.
 		const std::string file_title = g.title;
 		const bool renamed = ApplyGameDbTitle(g);
+		if (!g.drive.empty())
+		{
+			// 2026-10-09: the disc in the drive; its settings follow the game (its serial), and an empty drive won't start.
+			if (g.serial.empty())
+			{
+				g.title = g.file + " (no disc)";
+				g.damaged = "no PS2 disc in the " + g.file + " (put one in and reopen PS5SX2)";
+			}
+			else
+			{
+				if (!renamed)
+					g.title = g.serial;
+				g.stem = g.title;
+			}
+		}
 		ReadBadges(g, paths.settings_dir, paths.gs_ini, paths.patches_dir);
 		on_usb += OnUsb(g.path) ? 1 : 0;
 		if (renamed)
@@ -1699,7 +1716,18 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	cc.url_template = kCoverUrl;
 	cc.allow_download = paths.allow_download;
 	cc.download_usb_only = true; // vk-285-110: the rest came from the prefetch, before the jailbreak
-	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) { return g_http.Get(url, out); });
+	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) {
+		// 2026-10-09: mbedTLS first (it works after the jailbreak), Sony's client if it can't connect at all.
+		out.clear();
+		const int status = g_coverhttp.Get(url, false, 0, 0, [&out](const void* p, size_t n) {
+			out.insert(out.end(), static_cast<const uint8_t*>(p), static_cast<const uint8_t*>(p) + n);
+			return true;
+		});
+		if (status >= 0)
+			return status;
+		out.clear();
+		return g_http.Get(url, out);
+	});
 
 	// The key sounds (vk-285-47). Without an audio port the shelf is simply quiet.
 	Mixer* mixer = nullptr;
@@ -1871,6 +1899,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 			in.circle = pd.buttons & kPadCircle;
 			in.l2 = (pd.buttons & kPadL2) || pd.l2 > 160; // vk-285-116
 			in.r2 = (pd.buttons & kPadR2) || pd.r2 > 160;
+			in.l3 = pd.buttons & kPadL3; // PS2CD
 		}
 		app.Update(dt, in);
 		app.Build(frame, Clock());

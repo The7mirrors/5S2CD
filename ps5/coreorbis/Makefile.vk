@@ -325,7 +325,7 @@ C_SRCS := $(C_SRCS) $(NFS_CSRCS)
 
 # The GL build's shims minus glprobe, GLContextPS5 and gl_loader_table; plus the
 # shaderc shim and the Vulkan build's stand-ins for GL-only hooks.
-SHIM_SRCS := ./orbis-shims/ProsperoInput.cpp ./orbis-shims/ProsperoCDVD.cpp \
+SHIM_SRCS := ./orbis-shims/ProsperoInput.cpp ./orbis-shims/ProsperoCDVD.cpp ./orbis-shims/ProsperoDisc.cpp \
   ./orbis-shims/cpuinfo_stubs.cpp ./orbis-shims/ProsperoMisc.cpp \
   ./orbis-shims/stubs.cpp ./orbis-shims/ProsperoUI.cpp \
   ./orbis-shims/ProsperoSaveState.cpp ./orbis-shims/ProsperoAudio.cpp \

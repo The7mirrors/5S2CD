@@ -31,6 +31,11 @@ struct GameInfo
 	// vk-285-137 (AI-assisted; swordpdf: "add an option to hide games from the shelf"): PS5SX2/HideGame=true in its own settings
 	// file (ReadBadges). The shelf leaves it out unless gs.ini's PS5SX2/ShowHiddenGames is on, and then shows it dimmed.
 	bool hidden = false;
+	// 2026-10-09 (AI-assisted): PS5SX2/Favorite=true in its own settings file: first on the shelf (after the drives), badged.
+	bool favorite = false;
+	// 2026-10-09: a disc drive's entry ("/dev/cd0" the PS5's own, "/dev/cd1"... USB): path is the device, the title and
+	// serial the disc in it (empty when there's none).
+	std::string drive;
 };
 
 // A disc image's file name: .iso, (vk-285-108) .chd, (vk-285-113) .cso or .zso, (2026-10-08) .bin or .img, in any case,

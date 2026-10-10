@@ -21,6 +21,8 @@
 #include <unistd.h>
 #include <unordered_map>
 
+void GetValidDrive(std::string& drive); // pcsx2/CDVD (ProsperoDisc.cpp): the drive holding a readable disc
+
 namespace fe
 {
 namespace
@@ -91,9 +93,27 @@ public:
 	explicit IsoSectors(int fd)
 		: m_fd(fd)
 	{
+		struct stat st = {};
+		m_device = fstat(fd, &st) == 0 && S_ISCHR(st.st_mode); // 2026-10-09: a disc drive (/dev/cdN)
 	}
 	bool Read(uint32_t lba, void* buf, size_t len) override
 	{
+		if (m_device && m_block == 2048 && m_offset == 0)
+		{
+			// A drive refuses reads that aren't whole sectors (a 6-byte peek at the volume descriptor failed: no serial, no cover).
+			uint8_t sector[2048];
+			uint8_t* p = static_cast<uint8_t*>(buf);
+			for (; len; lba++)
+			{
+				const size_t n = std::min<size_t>(len, 2048);
+				if (!ReadAt(m_fd, static_cast<uint64_t>(lba) * 2048, sector, sizeof(sector)))
+					return false;
+				std::memcpy(p, sector, n);
+				p += n;
+				len -= n;
+			}
+			return true;
+		}
 		if (m_block == 2048 && m_offset == 0)
 			return ReadAt(m_fd, static_cast<uint64_t>(lba) * 2048, buf, len);
 		// A raw image: sector by sector, the 2048 bytes of data m_offset bytes into each m_block-byte sector.
@@ -132,6 +152,7 @@ public:
 
 private:
 	int m_fd;
+	bool m_device = false;
 	uint32_t m_block = 2048;
 	uint32_t m_offset = 0;
 };
@@ -552,7 +573,8 @@ bool IsDiscImageName(const char* name)
 {
 	// 2026-10-08: .bin and .img too (raw CD images or plain ISOs under another name; PCSX2 reads both, VMManager.cpp's list).
 	return HasExtension(name, ".iso") || HasExtension(name, ".chd") || HasExtension(name, ".cso") || HasExtension(name, ".zso") ||
-		   HasExtension(name, ".bin") || HasExtension(name, ".img") || IsElfName(name);
+		   HasExtension(name, ".bin") || HasExtension(name, ".img") || IsElfName(name) ||
+		   HasExtension(name, ".disc"); // 2026-10-09: a placeholder that stands for the disc in the PS5 or USB drive
 }
 
 bool IsElfName(const char* name)
@@ -572,6 +594,20 @@ void SetSerialCacheFile(const std::string& path)
 
 std::string ReadSerial(const std::string& image_path)
 {
+	// 2026-10-09: a ".disc" placeholder: the serial of the disc in the drive (PS5 or USB), read like an ISO.
+	if (HasExtension(image_path.c_str(), ".disc"))
+	{
+		std::string dev;
+		::GetValidDrive(dev);
+		const int dfd = dev.empty() ? -1 : open(dev.c_str(), O_RDONLY);
+		if (dfd < 0)
+			return {};
+		IsoSectors drive(dfd);
+		drive.Detect();
+		const std::string serial = SerialFromDisc(drive);
+		close(dfd);
+		return serial;
+	}
 	if (HasExtension(image_path.c_str(), ".chd") || HasExtension(image_path.c_str(), ".cso") || HasExtension(image_path.c_str(), ".zso"))
 		return ChdSerial(image_path); // vk-285-113: the compressed formats keep their serials in the cache file
 	const int fd = open(image_path.c_str(), O_RDONLY);
@@ -978,6 +1014,13 @@ std::vector<std::pair<std::string, int>> GameDbHwFixes(const std::string& serial
 void SortGames(std::vector<GameInfo>& games)
 {
 	std::sort(games.begin(), games.end(), [](const GameInfo& a, const GameInfo& b) {
+		// 2026-10-09: the disc drives first (PS5 drive, then USB), then favorites, then the rest, by title.
+		if (a.drive.empty() != b.drive.empty())
+			return !a.drive.empty();
+		if (!a.drive.empty())
+			return a.drive < b.drive;
+		if (a.favorite != b.favorite)
+			return a.favorite;
 		const std::string la = Lower(a.title), lb = Lower(b.title);
 		return la != lb ? la < lb : a.file < b.file;
 	});
@@ -1062,7 +1105,7 @@ void ScanDir(const std::string& dir, std::vector<GameInfo>& games, std::vector<s
 				continue;
 		}
 		g.file = file;
-		g.stem = file.substr(0, file.size() - 4); // ".iso", ".chd", ".cso", ".zso", ".bin", ".img"
+		g.stem = file.substr(0, file.rfind('.')); // ".iso", ".chd", ".cso", ".zso", ".bin", ".img", ".disc"
 		g.bytes = static_cast<uint64_t>(st.st_size);
 		MakeTitle(g.stem, g.title, g.region, g.extra);
 		games.push_back(g);
@@ -1081,6 +1124,22 @@ std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs)
 		std::sort(subdirs.begin(), subdirs.end());
 		for (const std::string& sub : subdirs)
 			ScanDir(dir + "/" + sub, games, nullptr);
+	}
+	// 2026-10-09 (AI-assisted): the disc drives: /dev/cd0 is the PS5's own, /dev/cd1... USB DVD drives. Each is an entry;
+	// the caller reads the disc's serial and title (ReadSerial, the game database) like an image's.
+	for (int i = 0; i < 8; i++)
+	{
+		const std::string dev = "/dev/cd" + std::to_string(i);
+		struct stat st = {};
+		if (stat(dev.c_str(), &st) != 0)
+			continue;
+		GameInfo g;
+		g.path = dev;
+		g.drive = dev;
+		g.file = i == 0 ? "PS5 drive" : (i == 1 ? std::string("USB drive") : "USB drive " + std::to_string(i));
+		g.stem = "disc-cd" + std::to_string(i);
+		g.title = g.file;
+		games.push_back(g);
 	}
 	SortGames(games);
 	return games;
@@ -1140,6 +1199,11 @@ void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string&
 	g.badges.clear();
 	const std::string ini = settings_dir + "/" + g.stem + ".ini";
 	g.hidden = IniValue(ini, "PS5SX2/HideGame") == "true"; // vk-285-137: the game's own file only, never gs.ini
+	g.favorite = IniValue(ini, "PS5SX2/Favorite") == "true"; // 2026-10-09
+	if (!g.drive.empty())
+		g.badges.push_back(g.drive == "/dev/cd0" ? "PS5 drive" : "USB drive");
+	if (g.favorite)
+		g.badges.push_back("Favorite");
 	std::string scale = IniValue(ini, "upscale_multiplier");
 	if (scale.empty())
 		scale = IniValue(gs_ini, "upscale_multiplier");

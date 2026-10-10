@@ -628,7 +628,7 @@ bool CoverService::MayDownload(int index) const
 {
 	const GameInfo& g = m_games[static_cast<size_t>(index)];
 	return !g.serial.empty() && m_cfg.allow_download && m_download && !m_cfg.url_template.empty() &&
-		   (!m_cfg.download_usb_only || !UsbDriveRoot(g.path).empty()) && !RecentlyMissing(m_cfg.cache_dir, g.serial);
+		   (!m_cfg.download_usb_only || !UsbDriveRoot(g.path).empty() || !g.drive.empty()) && !RecentlyMissing(m_cfg.cache_dir, g.serial);
 }
 
 bool CoverService::DownloadCover(int index, CoverImage& out)

@@ -331,6 +331,8 @@ const std::vector<OptionGroup>& OptionGroups()
 		// First, so neither is far down the sheet (the Folders rows come before them on the sheet for all games).
 		{"Shelf",
 			{
+				Toggle("PS5SX2/Favorite", "Favorite", "false", "Favorite %",
+					"Marks this game as a favorite: favorites come first on the shelf, after the disc drives, with a Favorite badge. The new order shows the next time the shelf opens."),
 				Toggle("PS5SX2/HideGame", "Hide from the shelf", "false", "Hidden %",
 					"Takes this game off the shelf when the sheet closes. Show hidden games, on the sheet for all games (R1), puts hidden games back on the shelf, dimmed, to turn this off again."),
 			},

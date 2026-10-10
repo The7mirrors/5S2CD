@@ -127,6 +127,12 @@ for name in malloc calloc realloc free posix_memalign aligned_alloc memalign \
     malloc_usable_size reallocf reallocarray getline getdelim; do
   radv_flags+=("--wrap=$name")
 done
+# 2026-10-09: NFS shares (vk-285-135) wrap the C library's file calls as link-vk.sh does; fclose/fflush are already
+# wrapped above and chained to the platform layer's memstream wrappers (OrbisNfs.o's __real_ names renamed).
+while read -r name; do
+  [[ -z $name || $name == \#* || $name == fclose || $name == fflush ]] && continue
+  radv_flags+=("--wrap=$name")
+done < "$here/orbis-shims/OrbisNfs.wrap"
 # qsort_r and localtime_r are bound by radv-bindings.S instead (see there).
 bound=(mkstemps openlog popen pclose open_memstream __xuname __assert
   __memset_chk regcomp regexec regfree regerror newlocale freelocale
