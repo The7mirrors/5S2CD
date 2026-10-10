@@ -16,8 +16,8 @@ settings work in it too.
 
 | | Feature | What it does |
 | :---: | --- | --- |
-| 💿 | **PS5 disc drive reads PS2 games** | Put a PS2 disc (DVD or CD) in your PS5's own drive. 5S2CD shows it first on the shelf with its name and cover. Press **X** to play. |
-| 🔌 | **External USB DVD drive** | No disc drive on your PS5 (Digital Edition)? Plug in a USB DVD drive and use it the same way. Both drives work at the same time. |
+| 💿 | **PS5 disc drive reads PS2 games** | Put a PS2 DVD (silver underside) in your PS5's own drive. 5S2CD shows it first on the shelf with its name and cover. Press **X** to play. |
+| 🔌 | **External USB DVD drive** | Plug a USB DVD drive into the PS5 and use it the same way. It also reads **PS2 CDs (blue underside)**, which the PS5's own drive can't read, and it works on the Digital Edition. Both drives work at the same time. |
 | ⚡ | **Insert the disc any time** | Before you open 5S2CD or while it's open: the shelf notices the disc within a couple of seconds. |
 | 🏠 | **The game's own tile on the PS5 home screen** | Insert a disc and a tile with the game's name and cover appears on the PS5 home screen. Open it and the game starts straight from the disc. Take the disc out and the tile goes away. *(Needs the included `discwatch.elf`.)* |
 | ⭐ | **Favorites** | Press **L3** on any game to make it a favorite. Favorites come first on the shelf, with a badge. |
