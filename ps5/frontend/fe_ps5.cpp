@@ -2032,10 +2032,16 @@ private:
 };
 
 // 2026-10-10 (5S2CD): where a disc can be copied: each USB drive with files on it (its PS5SX2/games folder, which PS5SX2
-// lists), then the PS5's internal storage (the games folder).
+// lists), then the PS5's internal storage (the games folder). Named so it's clear which drive is which: the drive(s) that
+// already have PS2 games come first. The names follow "Copy to the ..." and "Copying X to the ...".
 std::vector<std::pair<std::string, std::string>> DiscCopyPlaces(const std::string& internal_games)
 {
-	std::vector<std::pair<std::string, std::string>> usb, places;
+	struct Usb
+	{
+		std::string folder;
+		int games = 0;
+	};
+	std::vector<Usb> usb;
 	for (int i = 0; i < 8; i++)
 	{
 		const std::string root = "/mnt/usb" + std::to_string(i);
@@ -2050,12 +2056,45 @@ std::vector<std::pair<std::string, std::string>> DiscCopyPlaces(const std::strin
 				break;
 			}
 		closedir(d);
-		if (any)
-			usb.emplace_back("", root + "/PS5SX2/games");
+		if (!any)
+			continue;
+		Usb u;
+		u.folder = root + "/PS5SX2/games";
+		if (DIR* g = opendir(u.folder.c_str()))
+		{
+			while (struct dirent* e = readdir(g))
+			{
+				const char* dot = std::strrchr(e->d_name, '.');
+				std::string ext = dot ? dot : "";
+				for (char& c : ext)
+					c = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+				if (ext == ".iso" || ext == ".chd" || ext == ".cso" || ext == ".zso" || ext == ".bin" || ext == ".img")
+					u.games++;
+			}
+			closedir(g);
+		}
+		usb.push_back(u);
 	}
-	for (size_t i = 0; i < usb.size(); i++)
-		places.emplace_back(usb.size() == 1 ? std::string("USB drive") : "USB drive " + std::to_string(i + 1), usb[i].second);
-	places.emplace_back("internal storage", internal_games);
+	std::stable_sort(usb.begin(), usb.end(), [](const Usb& a, const Usb& b) { return a.games > b.games; });
+	int with = 0, without = 0;
+	for (const Usb& u : usb)
+		(u.games > 0 ? with : without)++;
+	std::vector<std::pair<std::string, std::string>> places;
+	int n_with = 0, n_without = 0;
+	for (const Usb& u : usb)
+	{
+		std::string name;
+		if (u.games > 0)
+			name = with == 1 ? std::string("USB drive with your PS2 games")
+			                 : "USB drive with " + std::to_string(u.games) + (u.games == 1 ? " PS2 game" : " PS2 games");
+		else if (without == 1)
+			name = usb.size() == 1 ? "USB drive" : "other USB drive";
+		else
+			name = "empty USB drive " + std::to_string(++n_without);
+		(void)n_with;
+		places.emplace_back(name, u.folder);
+	}
+	places.emplace_back("PS5's internal storage", internal_games);
 	return places;
 }
 } // namespace
@@ -2307,7 +2346,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		const std::string internal_games = paths.games_dir;
 		acfg.disc_copy.places = [internal_games] { return DiscCopyPlaces(internal_games); };
 		acfg.disc_copy.start = [copier, internal_games](const GameInfo& g, const std::string& folder, std::string& error) {
-			std::string place = "internal storage";
+			std::string place = "PS5's internal storage";
 			for (const auto& p : DiscCopyPlaces(internal_games))
 				if (p.second == folder)
 					place = p.first;

@@ -587,7 +587,7 @@ void OptionsSheet::BuildRows()
 			add(Kind::CopyDisc, "Stop the copy").target.clear();
 		else
 			for (const auto& place : m_paths.copy_places)
-				add(Kind::CopyDisc, "Copy to " + place.first).target = place.second;
+				add(Kind::CopyDisc, "Copy to the " + place.first).target = place.second;
 	}
 	if (settings && (m_has_preset || !m_global))
 		add(Kind::Recommended, m_global ? "Recommended for all games" : "Recommended settings");

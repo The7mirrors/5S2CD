@@ -47,7 +47,7 @@ typedef struct
 _Static_assert(sizeof(notify_request_t) == 0xC30, "notification request must be 0xC30 bytes");
 int sceKernelSendNotificationRequest(int32_t device, void* request, size_t size, int32_t blocking);
 
-#define VERSION "1.2"
+#define VERSION "1.3"
 #define APP_SRC "/data/homebrew/PPSA99213"
 #define HB "/data/homebrew"
 #define WORK "/data/PCSX2/disc-tiles"
@@ -925,6 +925,60 @@ static int make_tile(int drive, const char* serial)
 }
 
 /* ---------- the drives ---------- */
+/* ---------- 1.3: back to 5S2CD after the home screen took the front for a disc ---------- */
+typedef struct
+{
+	uint32_t sz;
+	uint32_t user_id;
+	uint32_t app_opt;
+	uint64_t crash_report;
+	uint32_t check_flag;
+} LncAppParam;
+int sceLncUtilLaunchApp(const char* title_id, const char* argv[], LncAppParam* param);
+int sceLncUtilGetAppId(const char* title_id);
+int sceUserServiceInitialize(void* params);
+int sceUserServiceGetForegroundUser(int32_t* user);
+int sceUserServiceGetInitialUser(int32_t* user);
+
+/* 5S2CD or one of its disc tiles, when one is running: its title id, else NULL */
+static const char* open_app(void)
+{
+	if (sceLncUtilGetAppId("PPSA99213") > 0)
+		return "PPSA99213";
+	for (int s = 0; s < NSLOTS; s++)
+		if (sceLncUtilGetAppId(kSlots[s]) > 0)
+			return kSlots[s];
+	return NULL;
+}
+
+/* The home screen comes to the front ~3 s after a disc goes in; launching the running app again brings it back (it
+   isn't started anew). A few tries over ~6 s, as the home screen may take the front after the first. */
+static void back_to_app(const char* tid)
+{
+	static int user_ready;
+	int32_t user = -1;
+	if (!user_ready)
+	{
+		sceUserServiceInitialize(NULL);
+		user_ready = 1;
+	}
+	if (sceUserServiceGetForegroundUser(&user) != 0 || user < 0)
+		sceUserServiceGetInitialUser(&user);
+	LncAppParam p;
+	memset(&p, 0, sizeof p);
+	p.sz = sizeof p;
+	p.user_id = (uint32_t)user;
+	static const int waits_ms[] = {1500, 2000, 2500};
+	for (unsigned k = 0; k < sizeof waits_ms / sizeof waits_ms[0]; k++)
+	{
+		usleep(waits_ms[k] * 1000);
+		if (sceLncUtilGetAppId(tid) <= 0)
+			return; /* closed meanwhile */
+		const int rc = sceLncUtilLaunchApp(tid, NULL, &p);
+		log_line("back to %s (try %u): 0x%x", tid, k + 1, (unsigned)rc);
+	}
+}
+
 static void poll_drive(int i)
 {
 	Drive* d = &g_drv[i];
@@ -971,8 +1025,16 @@ static void poll_drive(int i)
 		d->present = 1;
 		d->media = media;
 		log_line("%s: disc in, %lld bytes, %s", dev, (long long)media, d->serial[0] ? d->serial : "not a PS2 game disc");
+		const char* app = open_app(); /* 1.3: the home screen is taking the front; 5S2CD comes back */
+		if (app)
+		{
+			close(fd);
+			fd = -1;
+			back_to_app(app);
+		}
 	}
-	close(fd);
+	if (fd >= 0)
+		close(fd);
 	if (d->serial[0] && d->slot < 0 && make_tile(i, d->serial) != 0)
 		d->fails++;
 }

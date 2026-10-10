@@ -39,5 +39,5 @@ for c in src/main.c src/tile.c src/dw_https.c src/util.c src/net.c src/json.c ob
 	$CC $CFLAGS -Wall -Wno-unused-parameter -c -o "$o" "$c"
 	OBJS="$OBJS $o"
 done
-$CC -o discwatch.elf $OBJS obj/libmbedtls_app.a -lSceNet
+$CC -o discwatch.elf $OBJS obj/libmbedtls_app.a -lSceNet -lSceSystemService -lSceUserService
 ls -la discwatch.elf
