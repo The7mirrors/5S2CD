@@ -9,7 +9,7 @@ Put the disc in, pick it, play. No ripping, no copying files.</p>
 
 5S2CD is the PS2 emulator **[PS5SX2](https://github.com/Swordpdf/PS5SX2)** by **swordpdf**, with more additions:
 it reads **real PS2 discs** from the PS5's own drive or a **USB DVD drive**, gives each inserted disc **its own tile on
-the PS5 home screen**, and adds **favorites** and **shelves** to sort your games. Your PS5SX2 saves, memory cards and
+the PS5 home screen**, can **copy a disc** to a file, and adds **favorites** and **shelves** to sort your games. Your PS5SX2 saves, memory cards and
 settings work in it too.
 
 ## What's new
@@ -18,8 +18,9 @@ settings work in it too.
 | :---: | --- | --- |
 | 💿 | **PS5 disc drive reads PS2 games** | Put a PS2 DVD (silver underside) in your PS5's own drive. 5S2CD shows it first on the shelf with its name and cover. Press **X** to play. |
 | 🔌 | **External USB DVD drive** | Plug a USB DVD drive into the PS5 and use it the same way. It also reads **PS2 CDs (blue underside)**, which the PS5's own drive can't read, and it works on the Digital Edition. Both drives work at the same time. |
-| ⚡ | **Insert the disc any time** | Before you open 5S2CD or while it's open: the shelf notices the disc within a couple of seconds. |
+| ⚡ | **Insert the disc any time** | Before you open 5S2CD: it's on the shelf. While 5S2CD's shelf is open: a disc in the **USB drive** shows up on the shelf within a couple of seconds; a disc in the **PS5's own drive** closes 5S2CD (the PS5 goes to its home screen for a disc anyway), so the game's home-screen tile appears right away. |
 | 🏠 | **The game's own tile on the PS5 home screen** | Insert a disc and a tile with the game's name and cover appears on the PS5 home screen. Open it and the game starts straight from the disc. Take the disc out and the tile goes away. *(Needs the included `discwatch.elf`.)* |
+| 💾 | **Copy this disc** | Select a drive's tile, press **Square** and pick where the copy goes: the USB drive with your PS2 games, another USB drive, or the PS5's internal storage (**X** twice). The progress shows on the shelf; afterwards the game plays without the disc. |
 | ⭐ | **Favorites** | Press **L3** on any game to make it a favorite. Favorites come first on the shelf, with a badge. |
 | 🗂️ | **Shelves** | Press **Circle** to switch the shelf: **All**, **Disc drives**, **Favorites** or **Disc images**. |
 | 🖼️ | **Covers for discs** | Each disc gets its box art automatically, like your disc images do. |
@@ -47,7 +48,7 @@ and the in-game menu.
 
 ## Install
 
-1. Download **`5S2CD-v1.0.zip`** from the [Releases](../../releases) page and unzip it.
+1. Download **`5S2CD-v1.1.zip`** from the [Releases](../../releases) page and unzip it.
 2. With a file manager on the PS5, copy the zip's `PPSA99213` folder to `/data/homebrew/` (it holds `eboot.bin` and
    `sce_sys` with 5S2CD's name, icon and background).
 3. Copy the `sce_module` folder of PS5SX2 (`/data/homebrew/PPSA99203/sce_module`) into `/data/homebrew/PPSA99213/`.
@@ -68,13 +69,17 @@ Put a PS2 disc in, open **5S2CD**: the drive is the first tile on the shelf, wit
 
 - **"Unsupported Disc" is normal.** The PS5 says this for every PS2 disc - it's the console's own message and nothing
   can change it. Choose *Go to Home* and open 5S2CD (or the disc's own tile, see below): the game is there.
-- **Order doesn't matter.** Disc in first and then open 5S2CD, or open 5S2CD first and then put the disc in - the
-  drive's tile updates within a couple of seconds either way.
+- **Silver or blue?** Silver-underside PS2 discs are DVDs: they work in the PS5's own drive and in a USB DVD drive.
+  Blue-underside PS2 discs are CDs: the PS5's own drive can't read CDs at all, so use a USB DVD drive for them.
+- **Disc in while 5S2CD is open:** in the USB drive it shows up on the shelf within a couple of seconds. In the PS5's
+  own drive, 5S2CD closes (not during a game or a disc copy) so the disc's tile appears on the home screen at once.
 - **Home-screen tile for the disc** (open the game straight from the home screen) needs `discwatch.elf` running,
   which is why it belongs in autoload. A disc that was already in when it starts gets its tile too.
-  ShadowMountPlus adds the tile only while **no game or app is running**: if 5S2CD is still open in the background
-  (the PS button doesn't close it), the tile appears once you close it (*Options -> Close Game* on its tile) - or
-  just switch back to 5S2CD, where the disc is already on the shelf.
+  ShadowMountPlus adds the tile only while **no game or app is running**: if a game is open, the tile appears once
+  you close it (*Options -> Close Game* on its tile).
+- **Copy this disc:** select the drive's tile, press **Square**, choose a place, press **X** twice. While it copies, no
+  game starts; to cancel, open the Square menu again (*Stop the copy*). The copy is on the shelf the next time 5S2CD
+  opens, as `<Title> (<serial>).iso`.
 - After a restart, **jailbreak first**: 5S2CD (like PS5SX2) can only read the drive once your HEN is running.
 
 ## Build from source
@@ -94,7 +99,7 @@ What changed against PS5SX2:
 | Part | Files |
 | --- | --- |
 | Disc reader (FreeBSD `cd(4)`: DVD layout, CD TOC, 2048-byte reads, read-ahead) | `ps5/coreorbis/orbis-shims/ProsperoDisc.cpp`, `ProsperoCDVD.cpp` |
-| Drives on the shelf, favourites, tabs, covers, darker background | `ps5/frontend/fe_app.*`, `fe_games.*`, `fe_options.cpp`, `fe_covers.cpp`, `fe_ps5.cpp` |
+| Drives on the shelf, favourites, tabs, covers, darker background, Copy this disc, a new disc closing the shelf | `ps5/frontend/fe_app.*`, `fe_games.*`, `fe_options.cpp`, `fe_covers.cpp`, `fe_ps5.cpp` |
 | Disc boot, disc tiles, back to the menu via `relaunch.elf`, title ID `PPSA99213` | `ps5/coreorbis/main-boot.cpp`, `ProsperoHenJailbreak.cpp` |
 | App identity (name, icon, background) | `ps5/5s2cd/sce_sys/` |
 | Home-screen disc tiles | `ps5/5s2cd/discwatch/` |
