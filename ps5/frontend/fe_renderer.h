@@ -33,6 +33,7 @@ struct BoxDraw
 	VkDescriptorSet set = VK_NULL_HANDLE; // cover, placeholder, spine
 	float brightness = 1, cover_mix = 0, selected = 0;
 	float sheen_pos = 0, sheen_strength = 0, alpha = 1;
+	float back = 0; // 5S2CD: 1 = the back's picture is bound in the placeholder's place
 };
 
 struct HaloDraw

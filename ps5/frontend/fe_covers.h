@@ -30,7 +30,8 @@ struct CoverImage
 	{
 		Spine,
 		Placeholder,
-		Cover
+		Cover,
+		Back // 5S2CD (2026-10-14): the case's back
 	};
 	int game = -1;
 	Kind kind = Spine;
@@ -84,12 +85,12 @@ public:
 
 	// The first of them, or an empty path (stops looking at the first one found).
 	CoverFile Best(const GameInfo& g);
+	std::string Subdir(const std::string& dir, const char* lower_name); // 5S2CD: public (the backs' ART folder)
 
 private:
 	using Names = std::unordered_map<std::string, std::string>; // lower-case name -> the name on disk
 	std::vector<CoverFile> Search(const GameInfo& g, bool first_only);
 	const Names& List(const std::string& dir);
-	std::string Subdir(const std::string& dir, const char* lower_name);
 	bool Lookup(const std::string& dir, const std::string& base, const char* source, std::vector<CoverFile>& out);
 
 	std::string m_manual_dir, m_cache_dir;

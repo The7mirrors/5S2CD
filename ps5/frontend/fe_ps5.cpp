@@ -234,6 +234,7 @@ constexpr uint32_t kPadRight = 0x20, kPadLeft = 0x80, kPadCross = 0x4000, kPadOp
 constexpr uint32_t kPadUp = 0x10, kPadDown = 0x40, kPadTriangle = 0x1000, kPadCircle = 0x2000, kPadSquare = 0x8000;
 constexpr uint32_t kPadL2 = 0x100, kPadR2 = 0x200; // vk-285-116: the sheet's tabs
 constexpr uint32_t kPadL3 = 0x2; // PS2CD (2026-10-10): favorite / not on the shelf
+constexpr uint32_t kPadR3 = 0x4, kPadTouch = 0x100000; // 5S2CD (2026-10-14): shelf / grid
 
 double Now()
 {
@@ -2413,6 +2414,9 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 			in.l2 = (pd.buttons & kPadL2) || pd.l2 > 160; // vk-285-116
 			in.r2 = (pd.buttons & kPadR2) || pd.r2 > 160;
 			in.l3 = pd.buttons & kPadL3; // PS2CD
+			in.l2v = pd.l2 / 255.0f, in.r2v = pd.r2 / 255.0f; // 5S2CD: the picked case turns
+			in.r3 = pd.buttons & kPadR3;
+			in.touch = pd.buttons & kPadTouch;
 		}
 		for (DriveUpdate du; drives->Poll(du);)
 		{

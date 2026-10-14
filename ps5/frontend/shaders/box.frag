@@ -54,8 +54,9 @@ void main()
 	}
 	else if (v_face == 1)
 	{
-		base = vec3(0.030, 0.030, 0.036);
-		gloss = 0.6;
+		// 5S2CD: the back's picture under the sleeve when there is one (bound in the placeholder's place), else plastic
+		base = pc.p2.x > 0.5 ? hold : vec3(0.030, 0.030, 0.036);
+		gloss = pc.p2.x > 0.5 ? 1.0 : 0.6;
 	}
 	else
 	{

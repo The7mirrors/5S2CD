@@ -267,6 +267,11 @@ bool Renderer::CreateBoxMesh()
 					v.uv[0] = (p[0] + h[0]) / (2 * h[0]);
 					v.uv[1] = (h[1] - p[1]) / (2 * h[1]);
 				}
+				else if (f.face_id == 1) // 5S2CD: the back, as seen from behind: u from +X to -X (the spine on the right), v down
+				{
+					v.uv[0] = (h[0] - p[0]) / (2 * h[0]);
+					v.uv[1] = (h[1] - p[1]) / (2 * h[1]);
+				}
 				else if (f.face_id == 2) // spine: u from the back (-Z) to the front (+Z), v down
 				{
 					v.uv[0] = (p[2] + h[2]) / (2 * h[2]);
@@ -949,6 +954,7 @@ bool Renderer::Render(const FrameDesc& f, uint32_t out_index, VkSemaphore wait, 
 				p.p1[0] = d.sheen_pos;
 				p.p1[1] = d.sheen_strength;
 				p.p1[2] = d.alpha;
+				p.p2[0] = d.back;
 				m_vk->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 1, 1, &d.set, 0, nullptr);
 				m_vk->vkCmdPushConstants(cmd, m_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
 					sizeof(p), &p);

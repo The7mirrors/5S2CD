@@ -31,6 +31,9 @@ struct Input
 	bool up = false, down = false, square = false, triangle = false, circle = false;
 	bool l2 = false, r2 = false; // vk-285-116: the sheet's tabs
 	bool l3 = false; // PS2CD (2026-10-10): on the shelf, favorite / not
+	// 5S2CD (2026-10-14): L2 / R2's travel (0..1) turns the picked case round (its back); R3 or the touchpad: shelf / grid
+	float l2v = 0, r2v = 0;
+	bool r3 = false, touch = false;
 };
 
 // 2026-10-10 (5S2CD): copying a drive's disc to a disc image (fe_ps5.cpp's DiscCopier). places: where it can go now
@@ -117,6 +120,8 @@ private:
 		Texture* cover = nullptr;
 		Texture* placeholder = nullptr;
 		Texture* spine = nullptr;
+		Texture* back = nullptr; // 5S2CD: the case's back (bound in the placeholder's place once the cover is in)
+		bool back_bound = false;
 		VkDescriptorSet set = VK_NULL_HANDLE;
 		bool dirty = false;
 		float cover_mix = 0;     // animates to 1 once the cover arrives
@@ -126,6 +131,15 @@ private:
 	};
 
 	bool Step(int dir); // true when the selection moved
+	// 5S2CD (2026-10-14): the grid (rows of cases facing you; R3 / the touchpad switches), the picked case turned by
+	// L2 / R2 (all the way: its back)
+	bool m_grid = false;
+	float m_grid_row = 0;   // the top row showing (smoothly)
+	float m_turn = 0;       // the picked case's turn, as drawn
+	double m_ud_repeat = 0; // up / down held in the grid
+	int m_ud_held = 0;
+	void GridPose(int i, float t, Mat4& model, float& brightness) const;
+	void SaveView() const;
 	// vk-285-137 (AI-assisted; swordpdf: "add an option to hide games from the shelf"): m_games is the shelf; a game whose
 	// settings hide it (GameInfo::hidden) waits in m_shelved, with its slot (its covers keep coming), unless Show hidden
 	// games (gs.ini) is on. m_index[i] is m_games[i]'s index in the list Init got, which the cover service and the caller use.

@@ -27,6 +27,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../fe_app.h"
+#include <string>
+// 5S2CD: no disc drives on a PC (fe_games.cpp asks pcsx2/CDVD for the drive with a disc)
+void GetValidDrive(std::string& drive) { drive.clear(); }
 #include "../fe_games.h"
 #include "../fe_i18n.h"
 
@@ -220,10 +223,14 @@ bool SetButton(Input& in, const std::string& b, bool down)
 	bool* p = b == "left" ? &in.left : b == "right" ? &in.right : b == "up" ? &in.up : b == "down" ? &in.down :
 	          b == "cross" ? &in.cross : b == "circle" ? &in.circle : b == "square" ? &in.square :
 	          b == "triangle" ? &in.triangle : b == "options" ? &in.options : b == "l1" ? &in.l1 : b == "r1" ? &in.r1 :
-	          b == "l2" ? &in.l2 : b == "r2" ? &in.r2 : nullptr; // vk-285-116
+	          b == "l2" ? &in.l2 : b == "r2" ? &in.r2 : b == "r3" ? &in.r3 : b == "touch" ? &in.touch : nullptr; // vk-285-116
 	if (!p)
 		return false;
 	*p = down;
+	if (b == "l2") // 5S2CD: a held trigger is all the way down
+		in.l2v = down ? 1.0f : 0.0f;
+	if (b == "r2")
+		in.r2v = down ? 1.0f : 0.0f;
 	return true;
 }
 

@@ -789,6 +789,48 @@ void CoverService::Run()
 		sources += (sources.empty() ? " (" : ", ") + s.first + " " + std::to_string(s.second);
 	if (!sources.empty())
 		sources += ")";
+	// 5S2CD (2026-10-14): the backs and the printed spines: <covers>/back/<serial>.jpg and <covers>/spine/<serial>.jpg
+	// (cut from a full scan of the sleeve), or Open PS2 Loader's ART <id>_COV2 (back) / <id>_LAB (spine)
+	{
+		int backs = 0;
+		done.assign(n, false);
+		for (size_t k = 0; k < n && !m_stop; k++)
+		{
+			const int i = NextGame(done);
+			done[static_cast<size_t>(i)] = true;
+			const GameInfo& g = m_games[static_cast<size_t>(i)];
+			if (g.serial.empty())
+				continue;
+			const std::string opl = OplGameId(g.serial);
+			const std::string art = opl.empty() ? std::string() : finder.Subdir(UsbDriveRoot(g.path), "art");
+			for (int which = 0; which < 2; which++)
+			{
+				std::vector<std::string> paths;
+				if (!m_cfg.manual_dir.empty())
+					for (const char* ext : kImageExts)
+						paths.push_back(m_cfg.manual_dir + (which ? "/spine/" : "/back/") + g.serial + ext);
+				if (!art.empty())
+					for (const char* ext : kImageExts)
+						paths.push_back(art + "/" + opl + (which ? "_LAB" : "_COV2") + ext);
+				std::vector<uint8_t> bytes;
+				for (const std::string& p : paths)
+				{
+					CoverImage img;
+					if (IsCoverFile(p) && ReadFile(p, bytes) && Decode(bytes, which ? 1024 : 1024, img))
+					{
+						img.game = i;
+						img.kind = which ? CoverImage::Spine : CoverImage::Back;
+						img.source = "back";
+						backs += which ? 0 : 1;
+						std::lock_guard<std::mutex> lock(m_mutex);
+						m_results.push_back(std::move(img));
+						break;
+					}
+				}
+			}
+		}
+		std::printf("[frontend] case backs on disk: %d of %zu\n", backs, n);
+	}
 	std::printf("[frontend] covers on disk: %d of %zu%s; %d to download%s\n", found, n, sources.c_str(), wanted,
 		m_cfg.allow_download ? "" : " (downloads off here)");
 	std::fflush(stdout);

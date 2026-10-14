@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -34,6 +35,10 @@ constexpr float kSideZ = -0.55f;
 constexpr float kStepZ = 0.10f;
 constexpr float kSideTurn = 58.0f;  // degrees the neighbours turn towards the centre
 constexpr int kVisible = 7;         // cases drawn on each side
+// 5S2CD (2026-10-14): the grid: columns, the cases' size, the spacing, the rows' heights
+constexpr int kGridCols = 7;
+constexpr float kGridScale = 0.36f, kGridDX = 0.70f, kGridDY = 0.82f, kGridTopY = 0.92f;
+const char* const kViewFile = "/data/PCSX2/5s2cd-shelf.txt";
 
 // The author's handles, under the wordmark (vk-285-50, the user's request).
 constexpr const char* kDiscordHandle = "sword.pdf";
@@ -85,6 +90,12 @@ bool App::Init(Renderer* renderer, const Fonts* fonts, std::vector<GameInfo> gam
 	m_cfg = cfg;
 	m_games = std::move(games);
 	m_slots.assign(m_games.size(), Slot());
+	if (FILE* vf = std::fopen(kViewFile, "rb")) // 5S2CD: the grid or the shelf, as left
+	{
+		char line[64] = {};
+		m_grid = std::fgets(line, sizeof(line), vf) && std::strstr(line, "grid=1");
+		std::fclose(vf);
+	}
 	m_selected = m_games.empty() ? 0 : std::max(0, std::min(cfg.preselect, static_cast<int>(m_games.size()) - 1));
 	// vk-285-137: the games hidden from the shelf wait off it (ApplyHidden); the preselected one may be one of them.
 	m_index.resize(m_games.size());
@@ -178,6 +189,7 @@ void App::Shutdown()
 		m_renderer->DestroyTexture(s.cover);
 		m_renderer->DestroyTexture(s.placeholder);
 		m_renderer->DestroyTexture(s.spine);
+		m_renderer->DestroyTexture(s.back);
 		s = Slot();
 	}
 	m_renderer->SetAtlas(nullptr);
@@ -325,7 +337,8 @@ void App::PollCovers()
 			VK_FORMAT_R8G8B8A8_UNORM, img.rgba.data());
 		if (!t)
 			continue;
-		Texture** dst = img.kind == CoverImage::Spine ? &s.spine : img.kind == CoverImage::Placeholder ? &s.placeholder : &s.cover;
+		Texture** dst = img.kind == CoverImage::Spine ? &s.spine : img.kind == CoverImage::Placeholder ? &s.placeholder :
+		                img.kind == CoverImage::Back ? &s.back : &s.cover;
 		m_renderer->DestroyTexture(*dst);
 		*dst = t;
 		if (img.kind == CoverImage::Cover)
@@ -343,12 +356,18 @@ void App::PollCovers()
 		s.dirty = true;
 	}
 	for (Slot& s : m_slots)
+	{
+		// 5S2CD: the back takes the placeholder's place once the cover has faded in (the front no longer needs it)
+		if (s.back && !s.back_bound && s.has_cover && s.cover_mix >= 1.0f)
+			s.dirty = true;
 		if (s.dirty && s.spine && s.placeholder)
 		{
 			m_renderer->FreeTextureSet(s.set);
-			s.set = m_renderer->AllocTextureSet(s.cover ? s.cover : s.placeholder, s.placeholder, s.spine);
+			s.back_bound = s.back && s.has_cover && s.cover_mix >= 1.0f;
+			s.set = m_renderer->AllocTextureSet(s.cover ? s.cover : s.placeholder, s.back_bound ? s.back : s.placeholder, s.spine);
 			s.dirty = false;
 		}
+	}
 }
 
 void App::UpdateDrive(int index, const GameInfo& g, const std::vector<CoverImage>& images)
@@ -521,6 +540,35 @@ void App::Update(double dt, const Input& in)
 			}
 			if (in.r1 && !m_prev.r1)
 				Sound(Step(5) ? Sfx::JumpRight : Sfx::Edge, 0.25f);
+				// 5S2CD (2026-10-14): R3 / the touchpad: the shelf or the grid
+				if ((in.r3 && !m_prev.r3) || (in.touch && !m_prev.touch))
+				{
+					m_grid = !m_grid;
+					m_grid_row = m_games.empty() ? 0.0f : static_cast<float>(std::max(0, m_selected / kGridCols - 1));
+					SaveView();
+					m_note_text = m_grid ? "Grid" : "Shelf";
+					m_note_time = m_time;
+					Sound(Sfx::Move, 0.0f);
+				}
+				// the grid's rows: up / down, repeating while held
+				if (m_grid)
+				{
+					const int ud = in.up ? -1 : in.down ? 1 : 0;
+					const bool fresh_ud = (in.up && !m_prev.up) || (in.down && !m_prev.down);
+					if (ud && fresh_ud)
+					{
+						Sound(Step(ud * kGridCols) ? Sfx::Move : Sfx::Edge, 0.0f);
+						m_ud_held = ud, m_ud_repeat = m_time + 0.36;
+					}
+					else if (ud && ud == m_ud_held && m_time >= m_ud_repeat)
+					{
+						if (Step(ud * kGridCols))
+							Sound(Sfx::MoveRepeat, 0.0f);
+						m_ud_repeat = m_time + 0.12;
+					}
+					else if (!ud)
+						m_ud_held = 0;
+				}
 			// PS2CD (2026-10-10, user request): L3 makes the selected game a favorite, or not, at once -- the sheet's Favorite
 			// switch (PS5SX2/Favorite in the game's settings file). The badge changes now; the order the next time the shelf opens.
 			if (in.l3 && !m_prev.l3 && !m_games.empty() && !m_qr_big)
@@ -633,6 +681,19 @@ void App::Update(double dt, const Input& in)
 	if (m_qr_size <= 0)
 		m_qr_big = false;
 
+	// 5S2CD: the picked case turns as far as L2 / R2 are pressed (all the way: half round, its back); the grid's rows
+	// follow the selection (its row second from the top)
+	{
+		const float target = m_sheet_open ? 0.0f : (in.r2v - in.l2v) * kPi;
+		m_turn += (target - m_turn) * (1.0f - std::exp(-fdt * 10.0f));
+		if (m_grid && !m_games.empty())
+		{
+			const int rows = (static_cast<int>(m_games.size()) + kGridCols - 1) / kGridCols;
+			const float want = static_cast<float>(std::max(0, std::min(m_selected / kGridCols - 1, rows - 3)));
+			m_grid_row += (want - m_grid_row) * (1.0f - std::exp(-fdt * 10.0f));
+		}
+	}
+
 	// The shelf follows the selection on a critically damped spring.
 	const float k = 150.0f, c = 2.0f * std::sqrt(k);
 	for (int i = 0; i < 4; i++)
@@ -673,7 +734,7 @@ void App::Pose(float d, float t, Mat4& model, float& brightness) const
 	const float bob = (1.0f - e) * (0.030f + 0.012f * (1.0f + std::sin(t * 1.3f)));
 	float x = s * Mix(0.0f, side_x, e);
 	float z = Mix(kCenterZ, side_z, e);
-	const float turn = Mix(sway, -s * Radians(kSideTurn), e);
+	const float turn = Mix(sway + m_turn, -s * Radians(kSideTurn), e);
 	if (m_launching && !m_system_menu && ad < 0.5f) // 2026-10-08: the system menu isn't the selected game
 	{
 		const float l = Smoothstep(0.0f, 0.6f, static_cast<float>(m_time - m_launch_time));
@@ -681,6 +742,33 @@ void App::Pose(float d, float t, Mat4& model, float& brightness) const
 	}
 	model = Mat4::Translate(x, bob, z) * Mat4::RotateY(turn);
 	brightness = Mix(1.0f, 0.74f, e) - 0.05f * std::min(far_, 5.0f);
+}
+
+// 5S2CD (2026-10-14): a case in the grid: rows of seven facing you, the picked one nearer, turning gently (and with L2 / R2)
+void App::GridPose(int i, float t, Mat4& model, float& brightness) const
+{
+	const int col = i % kGridCols, row = i / kGridCols;
+	const float x = (static_cast<float>(col) - (kGridCols - 1) * 0.5f) * kGridDX;
+	const float y = kGridTopY - (static_cast<float>(row) - m_grid_row) * kGridDY - kBoxHalfH * kGridScale;
+	const bool picked = i == m_selected;
+	const float since = static_cast<float>(m_time - m_select_time);
+	const float pull = picked ? Smoothstep(0.0f, 0.25f, since) : 0.0f;
+	float z = 0.65f * pull;
+	if (m_launching && !m_system_menu && picked)
+		z += Smoothstep(0.0f, 0.6f, static_cast<float>(m_time - m_launch_time)) * 2.2f;
+	const float turn = picked ? 0.12f * std::sin(t * 0.9f) * pull + m_turn : 0.0f;
+	const float sc = kGridScale * (1.0f + 0.12f * pull);
+	model = Mat4::Translate(x, y + kBoxHalfH * sc, z) * Mat4::RotateY(turn) * Mat4::Scale(sc, sc, sc);
+	brightness = picked ? 1.0f : 0.72f;
+}
+
+void App::SaveView() const
+{
+	if (FILE* vf = std::fopen(kViewFile, "wb"))
+	{
+		std::fputs(m_grid ? "grid=1\n" : "grid=0\n", vf);
+		std::fclose(vf);
+	}
 }
 
 void App::Build(FrameDesc& f, const std::string& clock)
@@ -743,7 +831,35 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	const int first = std::max(0, static_cast<int>(std::floor(m_scroll)) - kVisible);
 	const int last = std::min(n - 1, static_cast<int>(std::ceil(m_scroll)) + kVisible);
 	const float since = static_cast<float>(m_time - m_select_time);
-	for (int i = first; i <= last; i++)
+	if (m_grid)
+	{
+		// 5S2CD: the grid's rows showing (one more above and below while they slide), the picked case last
+		const int r0 = std::max(0, static_cast<int>(std::floor(m_grid_row)) - 1), r1 = static_cast<int>(std::ceil(m_grid_row)) + 3;
+		for (int pass = 0; pass < 2; pass++)
+			for (int i = std::max(0, r0 * kGridCols); i < std::min(n, r1 * kGridCols); i++)
+			{
+				if ((i == m_selected) != (pass == 1))
+					continue;
+				const Slot& s = m_slots[static_cast<size_t>(i)];
+				if (!s.set)
+					continue;
+				BoxDraw b;
+				GridPose(i, t, b.model, b.brightness);
+				if (m_games[static_cast<size_t>(i)].hidden)
+					b.brightness *= 0.4f;
+				b.set = s.set;
+				b.cover_mix = s.cover_mix;
+				b.back = s.back_bound ? 1.0f : 0.0f;
+				b.selected = i == m_selected ? 1.0f : 0.0f;
+				if (i == m_selected && since < 1.2f)
+				{
+					b.sheen_pos = -0.3f + since * 1.6f;
+					b.sheen_strength = 0.16f * (1.0f - Smoothstep(0.6f, 1.2f, since));
+				}
+				f.boxes.push_back(b);
+			}
+	}
+	for (int i = first; i <= last && !m_grid; i++)
 	{
 		const Slot& s = m_slots[static_cast<size_t>(i)];
 		if (!s.set)
@@ -755,6 +871,7 @@ void App::Build(FrameDesc& f, const std::string& clock)
 			b.brightness *= 0.4f;
 		b.set = s.set;
 		b.cover_mix = s.cover_mix;
+		b.back = s.back_bound ? 1.0f : 0.0f;
 		b.selected = std::max(0.0f, 1.0f - std::fabs(d) * 2.0f);
 		if (i == m_selected && since < 1.2f)
 		{
@@ -773,8 +890,11 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	if (n > 0 && settle > 0.0f && m_slots[static_cast<size_t>(m_selected)].set && !m_launching)
 	{
 		float bright;
-		Pose(static_cast<float>(m_selected) - m_scroll, t, f.halo.model, bright);
-		f.halo.enabled = true;
+		if (m_grid)
+			GridPose(m_selected, t, f.halo.model, bright);
+		else
+			Pose(static_cast<float>(m_selected) - m_scroll, t, f.halo.model, bright);
+		f.halo.enabled = std::fabs(m_turn) < 0.3f; // (not while it's turned round)
 		f.halo.half_w = kBoxHalfW;
 		f.halo.half_h = kBoxHalfH;
 		f.halo.z = kBoxHalfD - 0.004f;
@@ -1039,8 +1159,13 @@ void App::Build(FrameDesc& f, const std::string& clock)
 		// logs); browsing needs two.
 		if (n > 1)
 		{
-			hint(icon::DpadLeftRight, nullptr, Tr(Str::HintBrowse));
+			hint(icon::DpadLeftRight, m_grid ? icon::DpadUpDown : nullptr, Tr(Str::HintBrowse));
 			hint("#L1", "#R1", Tr(Str::HintJump));
+		}
+		if (n > 0) // 5S2CD: the turn, the grid
+		{
+			hint("#L2", "#R2", "Turn");
+			hint("#R3", nullptr, m_grid ? "Shelf" : "Grid");
 		}
 		hint(icon::Square, nullptr, Tr(Str::HintSettings)); // vk-285-114
 		if (n > 0) // PS2CD: L3 favorite / not
