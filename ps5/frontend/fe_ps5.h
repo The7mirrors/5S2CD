@@ -22,6 +22,9 @@ struct OrbisFrontendPaths
 	// The prefetch's downloads; on the shelf (vk-285-110), a try at the covers of games on USB drives
 	// that are still missing after the jailbreak. Off with the nocoverdl flag.
 	bool allow_download = true;
+	// 5S2CD (2026-10-15): case backs from the LaunchBox Games Database for games with none on disk (off with the
+	// nobackdl flag, and with nocoverdl)
+	bool allow_back_download = true;
 	bool sound = true;        // the shelf's key sounds (vk-285-47; off with the nomenusound flag)
 	std::string settings_log; // vk-285-51: logs/settings.log, what the settings page changed
 	// Test build 1 (vk-285-55):

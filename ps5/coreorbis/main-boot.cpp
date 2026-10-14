@@ -2141,6 +2141,7 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   fe.covers_dir = OrbisDir("covers");
   fe.cache_dir = OrbisDir("cache") + "/covers";
   fe.allow_download = allow_download;
+  fe.allow_back_download = allow_download && !orbis_flag("nobackdl"); // 5S2CD (2026-10-15)
   fe.sound = !orbis_flag("nomenusound"); // vk-285-47
   fe.settings_log = OrbisLogPath("settings.log"); // vk-285-51
   // 2026-10-05: HD texture packs from archive.org, in the folder PCSX2 reads them from (EmuFolders::Textures, set below

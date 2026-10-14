@@ -342,6 +342,7 @@ int main(int argc, char** argv)
 	std::vector<Step> steps;
 	std::string texpacks;      // 2026-10-05: a folder with metadata.json (archive.org's list) and pack files
 	double texpacks_rate = 0;  // KB a second for the fake downloads (0: as fast as the disk)
+	std::string backs_from; // 5S2CD (2026-10-15): --backs-from <dir>: the case back "downloads" come from <dir>/<file> (else 404)
 	bool texpacks_fake = false; // fake downloads send zeros instead of reading the files (for the progress previews)
 	// 2026-10-08 (the showcase video): --virtual-clock: the texture packs' clock is the shelf's frames (1/60 s each), and
 	// --texpacks-rate counts in that time, so a recording shows a download at the rate given however long a frame takes to
@@ -395,6 +396,8 @@ int main(int argc, char** argv)
 			texpacks_rate = std::atof(next().c_str());
 		else if (a == "--texpacks-fake")
 			texpacks_fake = true;
+		else if (a == "--backs-from")
+			backs_from = next();
 		else if (a == "--virtual-clock")
 			virtual_clock = true;
 		else if (a == "--no-bios") // vk-285-134: no PS2 BIOS, and what was found instead (the shelf's line, picks refused)
@@ -509,7 +512,19 @@ int main(int argc, char** argv)
 	cc.manual_dir = data + "/covers";
 	cc.cache_dir = data + "/cache-covers";
 	cc.allow_download = false;
-	covers->Start(games, fonts, cc, [](const std::string&, std::vector<uint8_t>&) { return -1; });
+	if (!backs_from.empty()) // 5S2CD: the shipped back index, with a folder standing in for the LaunchBox server
+	{
+		std::vector<uint8_t> index;
+		if (ReadAll(root + "/assets/backs.txt", index))
+			cc.back_index.assign(index.begin(), index.end());
+		cc.back_url_base = "https://images.launchbox-app.com/";
+		cc.allow_back_download = true;
+	}
+	covers->Start(games, fonts, cc, [backs_from](const std::string& url, std::vector<uint8_t>& out) {
+		if (backs_from.empty())
+			return -1;
+		return ReadAll(backs_from + "/" + url.substr(url.rfind('/') + 1), out) ? 200 : 404;
+	});
 
 	App app;
 	AppConfig acfg;

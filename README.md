@@ -24,6 +24,10 @@ settings work in it too.
 | ⭐ | **Favorites** | Press **L3** on any game to make it a favorite. Favorites come first on the shelf, with a badge. |
 | 🗂️ | **Shelves** | Press **Circle** to switch the shelf: **All**, **Disc drives**, **Favorites** or **Disc images**. |
 | 🖼️ | **Covers for discs** | Each disc gets its box art automatically, like your disc images do. |
+| 🔲 | **Grid view** *(new in 1.2)* | Press **R3** or the **touchpad** to switch between the shelf and a grid of your cases, seven to a row. 5S2CD remembers which one you used. |
+| 🔄 | **Turn the case** *(new in 1.2)* | Hold **L2** or **R2** to turn the picked case round and read its back; let go and it turns back. |
+| 📖 | **Back covers, automatically** *(new in 1.2)* | Each case gets its real back cover, downloaded the first time it's needed from the [LaunchBox Games Database](https://gamesdb.launchbox-app.com/) (about 10,000 PS2 serials, your region's print first). Your own scans always come first. See [Back covers](#back-covers). |
+| 🏆 | **RetroAchievements in Settings** *(new in 1.2)* | Sign in from **Settings → Achievements** (press **X** on the account row). The shelf itself stays clean. |
 | 🎨 | **Its own look** | A darker shelf, and its own icon and home-screen background. |
 
 Everything else is PS5SX2 as you know it: your disc images (ISO, CHD, CSO...), settings, memory cards, save states
@@ -48,7 +52,7 @@ and the in-game menu.
 
 ## Install
 
-1. Download **`5S2CD-v1.1.zip`** from the [Releases](../../releases) page and unzip it.
+1. Download **`5S2CD-v1.2.zip`** from the [Releases](../../releases) page and unzip it.
 2. With a file manager on the PS5, copy the zip's `PPSA99213` folder to `/data/homebrew/` (it holds `eboot.bin` and
    `sce_sys` with 5S2CD's name, icon and background).
 3. Copy the `sce_module` folder of PS5SX2 (`/data/homebrew/PPSA99203/sce_module`) into `/data/homebrew/PPSA99213/`.
@@ -82,6 +86,31 @@ Put a PS2 disc in, open **5S2CD**: the drive is the first tile on the shelf, wit
   opens, as `<Title> (<serial>).iso`.
 - After a restart, **jailbreak first**: 5S2CD (like PS5SX2) can only read the drive once your HEN is running.
 
+## Back covers
+
+Turn a case with **L2** / **R2** to see its back. 5S2CD looks for the back in this order and uses the first it finds:
+
+1. **Your own scans:** `/data/PCSX2/covers/back/<serial>.jpg` (or `.png`), for example `SLES-50612.jpg`. A printed
+   spine can go in `/data/PCSX2/covers/spine/<serial>.jpg` too.
+2. **Open PS2 Loader art** on the game's USB drive: `ART/<ELF name>_COV2.jpg` (back) and `_LAB.jpg` (spine).
+3. **A back downloaded before:** `/data/PCSX2/cache/covers/back/`.
+4. **A download from the LaunchBox Games Database**, for games that have none of the above. The app ships a small
+   index (`ps5/frontend/assets/backs.txt`) that maps each PS2 serial to a back cover scan there, picking your
+   region's print first (PAL for European serials, Japanese for Japanese ones). It downloads only the backs of the
+   games on your shelf, after the front covers, and keeps them in the cache, so each one downloads once.
+
+Good to know:
+
+- **No scan for a game?** The case back stays plain. LaunchBox has backs for about 10,000 of PCSX2's 12,800 PS2
+  serials. Put your own scan in `covers/back/` and it's used from then on.
+- **Wrong back?** Put the right one in `covers/back/`: your file always wins. Matching is by name, so a few games
+  may get another region's print or, rarely, a wrong match.
+- **Blocking websites on your PS5** (a DNS allow-list such as nanoDNS)? Allow `images.launchbox-app.com`, next to
+  `raw.githubusercontent.com` for the front covers.
+- **Turn the downloads off:** create an empty file `/data/PCSX2/flags/nobackdl`. (`nocoverdl` turns off all cover
+  downloads, fronts and backs.)
+- The scans stay on LaunchBox's server: 5S2CD doesn't include any box art.
+
 ## Build from source
 
 Linux (Ubuntu 22.04 or WSL), clang/lld 18, the [ps5-payload-dev SDK](https://github.com/ps5-payload-dev/sdk) and
@@ -94,6 +123,13 @@ PS5_PAYLOAD_SDK=/path/to/ps5-payload-sdk ps5/5s2cd/relaunch/build.sh      # -> r
 PS5_PAYLOAD_SDK=/path/to/ps5-payload-sdk ps5/5s2cd/discwatch/build.sh     # -> build/discwatch.elf
 ```
 
+To refresh the back cover index from LaunchBox's latest database (optional; the repo has a ready one):
+
+```sh
+wget https://gamesdb.launchbox-app.com/Metadata.zip
+ps5/5s2cd/tools/make_back_index.py Metadata.zip bin/resources/GameIndex.yaml ps5/frontend/assets/backs.txt
+```
+
 What changed against PS5SX2:
 
 | Part | Files |
@@ -104,6 +140,8 @@ What changed against PS5SX2:
 | App identity (name, icon, background) | `ps5/5s2cd/sce_sys/` |
 | Home-screen disc tiles | `ps5/5s2cd/discwatch/` |
 | Relaunch helper | `ps5/5s2cd/relaunch/` |
+| Grid view, turning the case, case backs and printed spines (1.2) | `ps5/frontend/fe_app.*`, `fe_covers.*`, `fe_renderer.*`, `shaders/box.frag` |
+| Back cover downloads (1.2): the serial → LaunchBox index and the tool that makes it | `ps5/frontend/assets/backs.txt`, `ps5/5s2cd/tools/make_back_index.py`, `back_overrides.txt` |
 
 ## Credits
 
@@ -112,6 +150,8 @@ What changed against PS5SX2:
 - **[PCSX2](https://github.com/PCSX2/pcsx2)** and its team - the emulator; the disc reader follows PCSX2's own
   FreeBSD/macOS `IOCtlSrc`.
 - **[xlenore/ps2-covers](https://github.com/xlenore/ps2-covers)** - the covers.
+- **[LaunchBox Games Database](https://gamesdb.launchbox-app.com/)** and its contributors - the back cover scans
+  (downloaded from LaunchBox on demand; none are included here).
 - **ShadowMountPlus** - app and tile registration on the home screen.
 - **[ps5-payload-dev SDK](https://github.com/ps5-payload-dev/sdk)**, **[stb_image](https://github.com/nothings/stb)**,
   **[Mbed TLS](https://github.com/Mbed-TLS/mbedtls)**.

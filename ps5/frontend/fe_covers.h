@@ -51,6 +51,12 @@ struct CoverConfig
 	// vk-285-110: the shelf downloads only for games on USB drives (the prefetch before the jailbreak
 	// can't see those); every other cover comes from the prefetch, as before.
 	bool download_usb_only = false;
+	// 5S2CD (2026-10-15): case backs from the LaunchBox Games Database for games with none on disk: back_index holds
+	// "<serial> <file>" lines (frontend/assets/backs.txt, made by ps5/5s2cd/tools/make_back_index.py), each image at
+	// back_url_base + file; downloads go to <cache_dir>/back/<serial>.<ext> (and <serial>.missing after a 404).
+	std::string back_index;
+	std::string back_url_base;
+	bool allow_back_download = false;
 };
 
 // Fetches `url` into `out`; returns the HTTP status (200 on success), or a negative value when the
@@ -152,6 +158,7 @@ private:
 	bool FindLocalCover(CoverFinder& finder, int index, CoverImage& out, bool& upgrade);
 	bool MayDownload(int index) const;
 	bool DownloadCover(int index, CoverImage& out);
+	bool DownloadBack(int index, const std::string& file, CoverImage& out); // 5S2CD
 	int NextGame(const std::vector<bool>& done) const;
 
 	std::vector<GameInfo> m_games;

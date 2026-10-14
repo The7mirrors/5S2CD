@@ -1,0 +1,12 @@
+# 5S2CD: hand-checked case back matches (<serial> <LaunchBox image file>) that make_back_index.py's name matching misses
+SCES-50139 818018af-d4c9-42ec-96de-2675e616427c.jpg
+SCUS-97621 818d47f5-dd81-4474-9622-68b58c879a0a.jpg
+SLES-50650 dedb72f6-1b78-43f2-8a69-39d0d5e5c296.jpg
+SLES-50879 054a9fe4-47bc-4347-b53f-c236ae2a4787.jpg
+SLES-51345 8c72aad3-6d68-4ae2-a4b6-130e7dd28648.jpg
+SLES-52472 r2_d91de0d8-0431-4313-964c-82b1ecf611e4.jpg
+SLPM-62443 238018ff-cb3a-4354-8521-7e45402bc621.jpg
+SLPS-25426 62a0c2c2-33e1-466c-8a8e-ab0a11cdf1e6.jpg
+SLUS-21290 dd2f2102-2ffd-483c-bb00-e5e178b316a5.jpg
+SLUS-21321 a2fe67b5-f5a7-454d-894f-931785bacc9e.png
+SLUS-21416 393757c7-7997-4027-a910-2f5372d9a454.jpg

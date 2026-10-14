@@ -102,6 +102,31 @@ bool RecentlyMissing(const std::string& cache_dir, const std::string& serial)
 		   std::time(nullptr) - st.st_mtime < 14 * 24 * 3600;
 }
 
+// 5S2CD (2026-10-15): the back index's lines, "<serial> <file>" ('#' starts a comment), as serial -> file.
+std::unordered_map<std::string, std::string> ParseBackIndex(const std::string& text)
+{
+	std::unordered_map<std::string, std::string> out;
+	size_t pos = 0;
+	while (pos < text.size())
+	{
+		size_t end = text.find('\n', pos);
+		if (end == std::string::npos)
+			end = text.size();
+		const std::string line = text.substr(pos, end - pos);
+		pos = end + 1;
+		const size_t space = line.find(' ');
+		if (line.empty() || line[0] == '#' || space == std::string::npos)
+			continue;
+		std::string file = line.substr(space + 1);
+		while (!file.empty() && (file.back() == '\r' || file.back() == ' '))
+			file.pop_back();
+		// only a plain file name: nothing that could reach another place on the server
+		if (!file.empty() && file.find('/') == std::string::npos && file.find("..") == std::string::npos)
+			out.emplace(line.substr(0, space), file);
+	}
+	return out;
+}
+
 // The glow colour: the dominant saturated hue of the cover, brightened.
 bool GlowFrom(const CoverImage& img, float out[3])
 {
@@ -673,6 +698,49 @@ bool CoverService::DownloadCover(int index, CoverImage& out)
 	return ok;
 }
 
+// 5S2CD (2026-10-15): a case back from the LaunchBox Games Database (CoverConfig::back_index), kept in <cache>/back/.
+bool CoverService::DownloadBack(int index, const std::string& file, CoverImage& out)
+{
+	const GameInfo& g = m_games[static_cast<size_t>(index)];
+	if (m_offline || m_stop)
+		return false;
+	const std::string dir = m_cfg.cache_dir + "/back";
+	const size_t dot = file.rfind('.');
+	const std::string ext = dot == std::string::npos ? std::string(".jpg") : LowerAscii(file.substr(dot));
+	const std::string url = m_cfg.back_url_base + file;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_busy = true;
+	}
+	std::vector<uint8_t> bytes;
+	const int status = m_download(url, bytes);
+	bool ok = false;
+	if (status == 200 && Decode(bytes, 1024, out))
+	{
+		MakeDirs(dir);
+		WriteFileAtomic(dir + "/" + g.serial + (ext == ".png" || ext == ".jpeg" ? ext : std::string(".jpg")), bytes);
+		out.game = index;
+		out.kind = CoverImage::Back;
+		out.source = "back";
+		ok = true;
+	}
+	else if (status == 404)
+	{
+		MakeDirs(dir);
+		WriteFileAtomic(dir + "/" + g.serial + ".missing", std::vector<uint8_t>{'4', '0', '4', '\n'});
+	}
+	else if (status < 0)
+		m_offline = true;
+	std::printf("[frontend] back %s: %s -> %d%s\n", g.serial.c_str(), url.c_str(), status,
+		ok ? " (saved)" : status >= 0 ? "" : m_stop ? " (stopped: the shelf closed)" : " (network down; no more downloads this session)");
+	std::fflush(stdout);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_download_done++;
+	}
+	return ok;
+}
+
 std::vector<int> CoverService::MissingCovers(const std::vector<GameInfo>& games, const CoverConfig& cfg)
 {
 	std::vector<int> missing;
@@ -790,8 +858,12 @@ void CoverService::Run()
 	if (!sources.empty())
 		sources += ")";
 	// 5S2CD (2026-10-14): the backs and the printed spines: <covers>/back/<serial>.jpg and <covers>/spine/<serial>.jpg
-	// (cut from a full scan of the sleeve), or Open PS2 Loader's ART <id>_COV2 (back) / <id>_LAB (spine)
+	// (cut from a full scan of the sleeve), or Open PS2 Loader's ART <id>_COV2 (back) / <id>_LAB (spine); 2026-10-15: then
+	// a downloaded back (<cache>/back/<serial>), and the games with none get one from the LaunchBox Games Database below.
+	std::vector<std::pair<int, std::string>> back_wanted; // (game, LaunchBox file)
 	{
+		const std::unordered_map<std::string, std::string> index = ParseBackIndex(m_cfg.back_index);
+		const std::string back_cache = m_cfg.cache_dir.empty() ? std::string() : m_cfg.cache_dir + "/back";
 		int backs = 0;
 		done.assign(n, false);
 		for (size_t k = 0; k < n && !m_stop; k++)
@@ -812,7 +884,11 @@ void CoverService::Run()
 				if (!art.empty())
 					for (const char* ext : kImageExts)
 						paths.push_back(art + "/" + opl + (which ? "_LAB" : "_COV2") + ext);
+				if (!which && !back_cache.empty())
+					for (const char* ext : kImageExts)
+						paths.push_back(back_cache + "/" + g.serial + ext);
 				std::vector<uint8_t> bytes;
+				bool got = false;
 				for (const std::string& p : paths)
 				{
 					CoverImage img;
@@ -822,21 +898,30 @@ void CoverService::Run()
 						img.kind = which ? CoverImage::Spine : CoverImage::Back;
 						img.source = "back";
 						backs += which ? 0 : 1;
+						got = true;
 						std::lock_guard<std::mutex> lock(m_mutex);
 						m_results.push_back(std::move(img));
 						break;
 					}
 				}
+				if (!which && !got && m_cfg.allow_back_download && m_download && !m_cfg.back_url_base.empty() && !back_cache.empty() &&
+					!RecentlyMissing(back_cache, g.serial))
+				{
+					const auto it = index.find(g.serial);
+					if (it != index.end())
+						back_wanted.emplace_back(i, it->second);
+				}
 			}
 		}
-		std::printf("[frontend] case backs on disk: %d of %zu\n", backs, n);
+		std::printf("[frontend] case backs on disk: %d of %zu; %zu to download (%zu in the index)%s\n", backs, n, back_wanted.size(),
+			index.size(), m_cfg.allow_back_download ? "" : " (back downloads off)");
 	}
 	std::printf("[frontend] covers on disk: %d of %zu%s; %d to download%s\n", found, n, sources.c_str(), wanted,
 		m_cfg.allow_download ? "" : " (downloads off here)");
 	std::fflush(stdout);
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
-		m_download_total = wanted;
+		m_download_total = wanted + static_cast<int>(back_wanted.size());
 	}
 	// Then the downloads, nearest the selection first, until the network fails. After the HEN jailbreak
 	// HTTPS failed on vk-285-41/42; when it still does, the next start's prefetch fetches these.
@@ -851,6 +936,16 @@ void CoverService::Run()
 		CoverImage cover;
 		if (DownloadCover(i, cover))
 			deliver(i, cover);
+	}
+	// 5S2CD (2026-10-15): then the case backs, in the order the pass above met them (nearest the selection first then).
+	for (size_t k = 0; k < back_wanted.size() && !m_stop && !m_offline; k++)
+	{
+		CoverImage back;
+		if (DownloadBack(back_wanted[k].first, back_wanted[k].second, back))
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_results.push_back(std::move(back));
+		}
 	}
 	std::lock_guard<std::mutex> lock(m_mutex);
 	m_busy = false;

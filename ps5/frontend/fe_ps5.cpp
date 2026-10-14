@@ -159,8 +159,10 @@ FE_INCBIN_ASSET(fe_web_discord, "web/discord.svg");
 FE_INCBIN_ASSET(fe_web_x, "web/x-twitter.svg");
 // vk-285-51: the recommended settings the page's Recommended button restores.
 FE_INCBIN_ASSET(fe_presets, "presets.ini");
+// 5S2CD (2026-10-15): the case backs' index, "<serial> <LaunchBox image file>" (ps5/5s2cd/tools/make_back_index.py).
+FE_INCBIN_ASSET(fe_back_index, "backs.txt");
 extern "C" const uint8_t fe_font_brands[], fe_font_brands_end[], fe_web_page[], fe_web_page_end[], fe_web_discord[],
-	fe_web_discord_end[], fe_web_x[], fe_web_x_end[], fe_presets[], fe_presets_end[];
+	fe_web_discord_end[], fe_web_x[], fe_web_x_end[], fe_presets[], fe_presets_end[], fe_back_index[], fe_back_index_end[];
 
 // main-boot.cpp (2026-10-05): the folder the emulator would take a game's texture pack from (a USB drive, the settings
 // page's folder, /data), for the HD texture pack row.
@@ -172,6 +174,8 @@ using namespace fe;
 
 // xlenore/ps2-covers, the default set: <serial>.jpg, 512x736 (the same source as the user's Twiso).
 constexpr const char* kCoverUrl = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg";
+// 5S2CD (2026-10-15): the LaunchBox Games Database's images (the case backs; the file names come from backs.txt).
+constexpr const char* kBackUrlBase = "https://images.launchbox-app.com/";
 
 // The key sounds' output: a port on the main output, float stereo at 48 kHz in 256-frame grains,
 // opened the way PCSX2's own output opens it once the game runs (system user, main port, format 4),
@@ -2213,6 +2217,9 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	cc.url_template = kCoverUrl;
 	cc.allow_download = paths.allow_download;
 	cc.download_usb_only = true; // vk-285-110: the rest came from the prefetch, before the jailbreak
+	cc.back_index.assign(reinterpret_cast<const char*>(fe_back_index), static_cast<size_t>(fe_back_index_end - fe_back_index));
+	cc.back_url_base = kBackUrlBase;
+	cc.allow_back_download = paths.allow_download && paths.allow_back_download; // 5S2CD
 	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) {
 		// 2026-10-09: mbedTLS first (it works after the jailbreak), Sony's client if it can't connect at all.
 		out.clear();

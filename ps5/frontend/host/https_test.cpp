@@ -1,6 +1,7 @@
 // PS5 port frontend: tests for fe_https (2026-10-05, AI-assisted).
 //
 //   https_test local <servers.json>   the servers of https_testserver.py (made by test-https.sh)
+//   https_test get <url> <file>       one real GET, the body to <file> (5S2CD: the case backs' server)
 //   https_test real                   archive.org, through $https_proxy's CONNECT when it is set (the PC's preview VM)
 //   https_test units                  URL parsing, redirects' addresses, the calendar conversion
 //
@@ -517,6 +518,22 @@ static void Real()
 	std::printf("real: done\n");
 }
 
+// 5S2CD (2026-10-15): one GET of a real URL (the case backs' server, images.launchbox-app.com), the body to a file.
+static void GetOne(const std::string& url, const std::string& out)
+{
+	HttpsClient c(HostPlatform());
+	std::string err;
+	CHECK(c.Init(err));
+	Fetch f = Get(c, url, false, 0, 0, 0, 60000);
+	std::printf("  %s -> %d, %zu bytes%s%s\n", url.c_str(), f.status, f.body.size(), f.error.empty() ? "" : ", ", f.error.c_str());
+	CHECK(f.status == 200 && !f.body.empty());
+	if (FILE* o = std::fopen(out.c_str(), "wb"))
+	{
+		std::fwrite(f.body.data(), 1, f.body.size(), o);
+		std::fclose(o);
+	}
+}
+
 int main(int argc, char** argv)
 {
 	const std::string mode = argc > 1 ? argv[1] : "";
@@ -526,9 +543,11 @@ int main(int argc, char** argv)
 		Local(argv[2]);
 	else if (mode == "real")
 		Real();
+	else if (mode == "get" && argc > 3)
+		GetOne(argv[2], argv[3]);
 	else
 	{
-		std::printf("usage: https_test units | local <servers.json> | real\n");
+		std::printf("usage: https_test units | local <servers.json> | real | get <url> <file>\n");
 		return 2;
 	}
 	std::printf(g_failures ? "%d FAILED\n" : "all passed\n", g_failures);
