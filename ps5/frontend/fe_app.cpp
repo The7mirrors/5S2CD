@@ -923,26 +923,12 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	float x = margin;
 	x += m_fonts->AddText(ui, "PS5", x, 150.0f * k, 60.0f * k, white, 0.8f);
 	m_fonts->AddText(ui, "SX2", x + 2.0f * k, 150.0f * k, 60.0f * k, accent, 0.8f);
-	{
-		const float hpx = 32.0f * k, hy2 = 214.0f * k;
-		float hx2 = margin + 2.0f * k;
-		const bool icons = m_fonts->Has(icon::Discord) && m_fonts->Has(icon::XTwitter);
-		if (icons)
-			hx2 += m_fonts->AddText(ui, icon::Discord, hx2, hy2 + 2.0f * k, hpx * 1.05f, faint) + 12.0f * k;
-		hx2 += m_fonts->AddText(ui, kDiscordHandle, hx2, hy2, hpx, faint, 0.1f) + 40.0f * k;
-		if (icons)
-			hx2 += m_fonts->AddText(ui, icon::XTwitter, hx2, hy2 + 2.0f * k, hpx * 0.95f, faint) + 12.0f * k;
-		m_fonts->AddText(ui, kXHandle, hx2, hy2, hpx, faint, 0.1f);
-	}
+	// 5S2CD (2026-10-14, the user's request): the author's handles are in the settings sheet (its foot), not under the
+	// wordmark; no RetroAchievements line on the shelf (L1 + Square still opens the account)
+	(void)faint;
 	if (!clock.empty())
 		m_fonts->AddText(ui, clock.c_str(), W - margin, 150.0f * k, 58.0f * k, white, 0.2f, Fonts::Right);
-	if (m_cfg.achievements.state)
-	{
-		std::string label = "RetroAchievements - ";
-		label += m_account.account.saved ? m_account.account.username : Tr(Str::AccountSignIn);
-		m_fonts->AddText(ui, label.c_str(), margin, 290.0f * k, 34.0f * k, dim);
-	}
-	BuildTexturePackActivity(ui, margin, (m_cfg.achievements.state ? 350.0f : 290.0f) * k, k, accent); // 2026-10-05
+	BuildTexturePackActivity(ui, margin, 214.0f * k, k, accent); // 2026-10-05
 	BuildBiosLine(ui, W, k); // vk-285-134
 
 	// The settings page's QR tile, bottom right (vk-285-50). The code is dark on a light tile, as
@@ -1143,6 +1129,8 @@ void App::Build(FrameDesc& f, const std::string& clock)
 		hint(icon::DpadUpDown, nullptr, Tr(Str::HintMove));
 		hint(icon::DpadLeftRight, nullptr, Tr(Str::HintChange));
 		hint(icon::Triangle, nullptr, m_sheet.tab() == kTabAchievements ? Tr(Str::AchievementRefresh) : Tr(Str::HintReset));
+		if (m_sheet.tab() == kTabAchievements && m_cfg.achievements.state)
+			hint(icon::Cross, nullptr, "Account");
 		hint(icon::Circle, nullptr, Tr(Str::HintBack));
 		if (n > 0)
 		{
@@ -1173,8 +1161,7 @@ void App::Build(FrameDesc& f, const std::string& clock)
 		static std::string s_tab_hint; // 2026-10-09: the shelf tab, Circle for the next
 		s_tab_hint = std::string("Shelf: ") + kShelfTabNames[m_tab];
 		hint(icon::Circle, nullptr, s_tab_hint.c_str());
-		if (m_cfg.achievements.state && !m_qr_big)
-			hint("#L1", icon::Square, "RetroAchievements");
+		// (5S2CD: no RetroAchievements hint on the shelf; L1 + Square still opens the account)
 		if (m_qr_size > 0)
 			hint(icon::Triangle, nullptr, Tr(m_qr_big ? Str::HintBack : Str::HintQrCode));
 	}
@@ -1579,6 +1566,16 @@ void App::UpdateSheet(double dt, const Input& in)
 		}
 		if (pressed(in.triangle, m_prev.triangle) && !m_game_achievements.busy)
 			LoadGameAchievements();
+		if (pressed(in.cross, m_prev.cross) && m_cfg.achievements.state)
+		{
+			// 5S2CD (2026-10-14): the free RetroAchievements account from Settings, not only the hidden chord
+			CloseSheet();
+			m_sheet_anim = 0;
+			m_account.Open();
+			m_ime_field = -1;
+			m_held = 0;
+			Sound(Sfx::Move, 0.3f);
+		}
 		return;
 	}
 
@@ -2149,6 +2146,19 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 	Fonts::AddRoundedRect(ui, x, y, sw, sh, 42 * k, Rgba(0.045f, 0.050f, 0.105f, 0.985f)); // the shelf's text must not show through
 
 	const float cx = x + 64 * k, inner = sw - 128 * k;
+	{
+		// 5S2CD: the credit (it was under the shelf's wordmark): PS5SX2 by swordpdf, the author's Discord and X
+		const float fpx = 24 * k, fy = y + sh - 30 * k;
+		std::string credit = "PS5SX2 by swordpdf   ";
+		float fx = cx;
+		fx += m_fonts->AddText(ui, credit.c_str(), fx, fy, fpx, lo, 0.1f);
+		if (m_fonts->Has(icon::Discord))
+			fx += m_fonts->AddText(ui, icon::Discord, fx, fy + 2 * k, fpx * 1.05f, lo) + 8 * k;
+		fx += m_fonts->AddText(ui, kDiscordHandle, fx, fy, fpx, lo, 0.1f) + 26 * k;
+		if (m_fonts->Has(icon::XTwitter))
+			fx += m_fonts->AddText(ui, icon::XTwitter, fx, fy + 2 * k, fpx * 0.95f, lo) + 8 * k;
+		m_fonts->AddText(ui, kXHandle, fx, fy, fpx, lo, 0.1f);
+	}
 	// 2026-10-05 (AI-assisted; swordpdf: "the square ui in general is a little cramped"): a wider sheet, and its top in two
 	// lines that each have room: the title with this game / all games (L1 / R1) on the right, then the tabs (L2 / R2) as one
 	// strip across the sheet, the shown tab a white pill as the shown scope. vk-285-117's title kept its line to itself;
@@ -2214,7 +2224,22 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 
 	if (m_sheet.tab() == kTabAchievements)
 	{
-		BuildGameAchievements(ui, cx, y + 310 * k, inner, sh - 370 * k, k, accent);
+		float ay = y + 310 * k, ah = sh - 370 * k;
+		if (m_cfg.achievements.state)
+		{
+			// 5S2CD: the account row (Cross opens it): who is signed in, or Sign in
+			const float rh = 78 * k;
+			Fonts::AddRoundedRect(ui, cx - 12 * k, ay, inner + 24 * k, rh, 20 * k, Rgba(1, 1, 1, 0.07f));
+			Fonts::AddRoundedRect(ui, cx + 2 * k, ay + 20 * k, 6 * k, rh - 40 * k, 3 * k, accent);
+			std::string who = "RetroAchievements account:  ";
+			who += m_account.account.saved ? m_account.account.username : "not signed in";
+			m_fonts->AddText(ui, Fit(*m_fonts, who, 32 * k, inner * 0.62f).c_str(), cx + 26 * k, ay + rh * 0.5f + 11 * k, 32 * k, Rgba(1, 1, 1));
+			const std::string act = std::string(icon::Cross) + "  " + (m_account.account.saved ? "Manage / sign out" : Tr(Str::AccountSignIn));
+			m_fonts->AddText(ui, act.c_str(), cx + inner - 8 * k, ay + rh * 0.5f + 11 * k, 30 * k, Rgba(0.75f, 0.75f, 0.85f), 0.2f, Fonts::Right);
+			ay += rh + 18 * k;
+			ah -= rh + 18 * k;
+		}
+		BuildGameAchievements(ui, cx, ay, inner, ah, k, accent);
 		FadeRange(ui, begin, ui.size(), e);
 		return;
 	}
