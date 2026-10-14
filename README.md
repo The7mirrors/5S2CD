@@ -93,7 +93,8 @@ Turn a case with **L2** / **R2** to see its back. 5S2CD looks for the back in th
 1. **Your own scans:** `/data/PCSX2/covers/back/<serial>.jpg` (or `.png`), for example `SLES-50612.jpg`. A printed
    spine can go in `/data/PCSX2/covers/spine/<serial>.jpg` too.
 2. **Open PS2 Loader art** on the game's USB drive: `ART/<ELF name>_COV2.jpg` (back) and `_LAB.jpg` (spine).
-3. **A back downloaded before:** `/data/PCSX2/cache/covers/back/`.
+3. **A back downloaded before:** in `/data/PCSX2/cache/covers/back/`, or in `covers/back/` itself when there is no
+   `cache` folder (downloaded front covers go in `covers/` the same way).
 4. **A download from the LaunchBox Games Database**, for games that have none of the above. The app ships a small
    index (`ps5/frontend/assets/backs.txt`) that maps each PS2 serial to a back cover scan there, picking your
    region's print first (PAL for European serials, Japanese for Japanese ones). It downloads only the backs of the
